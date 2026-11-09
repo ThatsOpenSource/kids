@@ -1,0 +1,5 @@
+-- LEGACY REFERENCE ONLY.
+-- Source of truth is: apps/server/prisma/schema.prisma
+-- Apply schema with:
+--   cd apps/server && bunx prisma db push
+--   or: bun run db:migrate

@@ -1,0 +1,67 @@
+.personTable {
+  font-size: 0.82rem;
+}
+
+.personTable th,
+.personTable td {
+  white-space: nowrap;
+}
+
+.row .pwActions {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.row:hover .pwActions,
+.row:focus-within .pwActions {
+  opacity: 1;
+}
+
+.pwCol {
+  position: sticky;
+  right: 0;
+  background: var(--bg);
+  min-width: 88px;
+  text-align: center;
+}
+
+.personTable thead .pwCol {
+  background: var(--bg-soft);
+}
+
+.copyBtn {
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 3px 8px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.copyBtn:hover {
+  background: var(--bg-soft-2);
+}
+
+.filterBar {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.filterBar input[type='search'],
+.filterBar input.searchInput,
+.filterBar .search {
+  flex: 1 1 200px;
+  min-width: 160px;
+}
+
+.filterSelect {
+  flex: 0 0 auto;
+  width: auto !important;
+  min-width: 130px;
+  max-width: 200px;
+}

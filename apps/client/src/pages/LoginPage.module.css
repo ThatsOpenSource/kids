@@ -1,0 +1,116 @@
+.shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  padding: var(--space-5);
+}
+
+.card {
+  width: min(400px, 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 28px var(--space-5);
+}
+
+.title {
+  margin: 0 0 var(--space-1);
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.sub {
+  margin: 0 0 var(--space-5);
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.error {
+  border: 1px solid var(--text);
+  background: var(--bg-soft);
+  color: var(--text);
+  padding: var(--space-2) 10px;
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  margin-bottom: var(--space-3);
+}
+
+.field {
+  margin-bottom: var(--space-3);
+}
+
+.label {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  margin-bottom: var(--space-1);
+}
+
+.input {
+  width: 100%;
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: var(--space-2) 10px;
+  font-size: 0.9rem;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--text);
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.qr {
+  display: block;
+  margin: 0 auto var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.secret {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  word-break: break-all;
+  color: var(--text-muted);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2);
+  background: var(--bg-soft);
+  border-radius: var(--radius);
+}
+
+.btn {
+  cursor: pointer;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  font-weight: 500;
+  font-size: 0.9rem;
+  background: var(--bg);
+  color: var(--text);
+  width: 100%;
+}
+
+.btnPrimary {
+  composes: btn;
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #ffffff;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

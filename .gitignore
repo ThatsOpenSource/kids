@@ -1,0 +1,15 @@
+node_modules
+dist
+build
+.env
+.env.local
+*.log
+logs/*
+!.gitkeep
+.DS_Store
+coverage
+.turbo
+*.tsbuildinfo
+apps/server/uploads
+apps/server/tmp
+*.env*
