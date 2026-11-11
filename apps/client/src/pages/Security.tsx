@@ -1,43 +1,47 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { api } from "../lib/api";
+import Button from "../components/Button";
+import s from "../styles/page.module.css";
 
 export default function Security() {
   const [qr, setQr] = useState("");
   const [secret, setSecret] = useState("");
   const [code, setCode] = useState("");
+  const [enabled, setEnabled] = useState(false);
   const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
 
-  async function setup() {
-    const data = await api("/api/auth/2fa/setup", { method: "POST", body: JSON.stringify({}) });
-    setQr(data.qrDataUrl);
-    setSecret(data.secret);
+  useEffect(() => { api("/api/auth/2fa/status").then(d => setEnabled(d.enabled)).catch(() => {}); }, []);
+
+  async function start() {
+    setErr("");
+    const d = await api("/api/auth/2fa/setup", { method: "POST", body: "{}" });
+    setQr(d.qr); setSecret(d.secret);
   }
-
   async function confirm() {
-    const data = await api("/api/auth/2fa/confirm", {
-      method: "POST",
-      body: JSON.stringify({ totpCode: code, secret }),
-    });
-    setMsg(data.ok ? "2FA aktiviert" : data.error);
+    setErr("");
+    try {
+      await api("/api/auth/2fa/confirm", { method: "POST", body: JSON.stringify({ code }) });
+      setEnabled(true); setQr(""); setSecret(""); setCode(""); setMsg("2FA ist aktiv.");
+    } catch (e: any) { setErr(e.message); }
   }
 
   return (
-    <div className="tab-panel active" style={{ display: "flex" }}>
-      <header className="toolbar">
-        <h2 style={{ margin: 0 }}>Sicherheit</h2>
-      </header>
-      <div style={{ padding: 24, maxWidth: 480 }}>
-        <button className="btn primary" onClick={setup}>2FA einrichten</button>
+    <div className={s.page}>
+      <header className={s.toolbar}><h2 className={s.title}>Sicherheit</h2></header>
+      <div className={s.scroll}>
+        <p>Status: {enabled ? <span className={s.chip}>2FA aktiv</span> : <span className={s.chip + " " + s.chipWarn}>2FA nicht aktiv</span>}</p>
+        {!qr && <Button variant="primary" onClick={start}>{enabled ? "2FA neu einrichten" : "2FA einrichten"}</Button>}
         {qr && (
-          <div style={{ marginTop: 16 }}>
-            <img src={qr} alt="QR" style={{ border: "1px solid var(--border)", borderRadius: "var(--radius)" }} />
+          <div className={s.mt}>
+            <img src={qr} alt="QR" width={200} height={200} />
+            <p className={s.secret}>{secret}</p>
+            <input className={"search-input " + s.field} placeholder="6-stelliger Code" value={code} onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} />
+            <Button variant="primary" onClick={confirm} disabled={code.length < 6}>Bestätigen</Button>
           </div>
         )}
-        <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
-          <input className="search-input" style={{ flex: 1 }} placeholder="6-stelliger Code" value={code} onChange={e => setCode(e.target.value)} />
-          <button className="btn primary" onClick={confirm}>Bestätigen</button>
-        </div>
-        {msg && <p style={{ marginTop: 12 }}>{msg}</p>}
+        {msg && <p>{msg}</p>}
+        {err && <p className={s.error}>{err}</p>}
       </div>
     </div>
   );

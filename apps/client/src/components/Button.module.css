@@ -1,0 +1,17 @@
+.btn {
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text);
+  padding: 7px 14px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: .85rem;
+  font-family: inherit;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--bg-soft); }
+.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.primary:hover { background: var(--primary-hover, #333); }
+.small { padding: 4px 10px; font-size: .78rem; }
+.btn:disabled { opacity: .4; cursor: not-allowed; }

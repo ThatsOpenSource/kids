@@ -1,47 +1,45 @@
 import { useEffect, useState } from "react";
 import { api, asArray } from "../lib/api";
+import styles from "./Dashboard.module.css";
+import s from "../styles/page.module.css";
 
 export default function Dashboard() {
   const [stats, setStats] = useState({ persons: 0, schools: 0, roles: 0 });
 
   useEffect(() => {
+    let c = false;
     Promise.all([
-      api("/api/persons?limit=1").catch(() => ({ total: 0 })),
-      api("/api/schools").catch(() => []),
-      api("/api/config/roles").catch(() => []),
-    ]).then(([p, s, r]) => {
-      setStats({
-        persons: p.total || 0,
-        schools: asArray(s).length,
-        roles: asArray(r).length,
-      });
+      api("/api/persons?limit=1").then(d => (d && typeof d.total === "number") ? d.total : 0).catch(() => 0),
+      api("/api/schools").then(d => Array.isArray(d) ? d.length : 0).catch(() => 0),
+      api("/api/config/roles").then(d => Array.isArray(d) ? d.length : 0).catch(() => 0),
+    ]).then(([persons, schools, roles]) => {
+      if (!c) setStats({ persons, schools, roles });
     });
+    return () => { c = true; };
   }, []);
 
   return (
-    <div className="tab-panel active" style={{ display: "flex", overflow: "auto" }}>
-      <header className="toolbar">
-        <h2>Dashboard</h2>
-      </header>
-      <div className="card-grid">
-        <div className="card">
-          <header><h3>Personen</h3></header>
-          <p style={{ fontSize: "2rem", margin: "16px 14px", color: "var(--text)" }}>{stats.persons}</p>
-          <footer><span className="badge">Gesamt</span></footer>
+    <div className={s.page}>
+      <header className={s.toolbar}><h2 className={s.title}>Dashboard</h2></header>
+      <div className={styles.grid}>
+        <div className={styles.card}>
+          <header className={styles.cardHeader}><h3>Personen</h3></header>
+          <p className={styles.stat}>{stats.persons}</p>
+          <footer className={styles.cardFooter}><span className={styles.badge}>Gesamt</span></footer>
         </div>
-        <div className="card">
-          <header><h3>Schulen</h3></header>
-          <p style={{ fontSize: "2rem", margin: "16px 14px", color: "var(--text)" }}>{stats.schools}</p>
-          <footer><span className="badge">Katalog</span></footer>
+        <div className={styles.card}>
+          <header className={styles.cardHeader}><h3>Schulen</h3></header>
+          <p className={styles.stat}>{stats.schools}</p>
+          <footer className={styles.cardFooter}><span className={styles.badge}>Katalog</span></footer>
         </div>
-        <div className="card">
-          <header><h3>Rollen</h3></header>
-          <p style={{ fontSize: "2rem", margin: "16px 14px", color: "var(--text)" }}>{stats.roles}</p>
-          <footer><span className="badge">Konfiguriert</span></footer>
+        <div className={styles.card}>
+          <header className={styles.cardHeader}><h3>Rollen</h3></header>
+          <p className={styles.stat}>{stats.roles}</p>
+          <footer className={styles.cardFooter}><span className={styles.badge}>Konfiguriert</span></footer>
         </div>
-        <div className="card">
-          <header><h3>Schnellstart</h3></header>
-          <p>ZIP mit genau einer XML hochladen unter Import. Schulen und Rollen unter Verwaltung pflegen. AMS- und CSV-Export unter Ausgabe.</p>
+        <div className={styles.card}>
+          <header className={styles.cardHeader}><h3>Schnellstart</h3></header>
+          <p className={styles.cardBody}>ZIP mit XML unter Import hochladen. Schulen und Rollen unter Verwaltung pflegen. ASM- und CSV-Export unter Ausgabe.</p>
         </div>
       </div>
     </div>

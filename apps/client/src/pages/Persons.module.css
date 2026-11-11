@@ -1,0 +1,8 @@
+.page { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+.toolbar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.search { flex: 0 0 280px; }
+.tableArea { flex: 1; overflow: auto; padding: 16px; }
+.pagination { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-top: 1px solid var(--border); }
+.chip { display: inline-block; font-size: .72rem; padding: 1px 8px; border: 1px solid var(--border-strong); border-radius: 999px; margin-right: 4px; }
+.chipRole { font-weight: 500; }
+.chipFlag { font-size: .72rem; }

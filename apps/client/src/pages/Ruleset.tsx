@@ -1,100 +1,102 @@
 import { useState, useEffect } from "react";
 import { api, asArray } from "../lib/api";
+import DataTable from "../components/DataTable";
 import Button from "../components/Button";
+import s from "../styles/page.module.css";
 
-interface Rule {
-  id?: string;
-  roleId?: string;
-  schoolId?: string;
-  length: number;
-  upper: boolean;
-  lower: boolean;
-  digits: boolean;
-  special: boolean;
-  specialSet?: string;
-}
+const WORD_LIST = [
+  "Apfel","Banane","Birne","Kirsche","Sonne","Mond","Stern","Wolke","Blume","Baum",
+  "Hund","Katze","Maus","Vogel","Fisch","Pferd","Ziege","Schaf","Ente","Hase",
+  "Bär","Löwe","Tiger","Zebra","Affe","Wal","Hai","Frosch","Biene","Ameise",
+  "Spinne","Käfer","Wurm","Auto","Bus","Zug","Schiff","Ball","Buch","Stift",
+  "Papier","Schere","Farbe","Kreide","Tafel","Stuhl","Tisch","Bett","Lampe","Tür",
+  "Dach","Wand","Boden","Garten","Park","Schule","Klasse","Lehrer","Freund","Mama",
+  "Papa","Oma","Opa","Bruder","Baby","Kind","Junge","Haus","Zimmer","Küche",
+  "Bad","Spiel","Lachen","Singen","Tanzen","Malen","Lesen","Reiten","Schwimmen","Laufen",
+  "Springen","Klettern","Schaukel","Rutsche","Sandkasten","Puppe","Teddy","Roboter","Rakete","Mond",
+  "Planet","Galaxie","Zauber","Fee","Drache","Ritter","Prinzessin","Schloss","Burg","Turm",
+].join(" ");
+
+interface Override { id: string; schoolId: string; roleId: string; length: number; special: boolean; wordList: boolean; }
 
 export default function Ruleset() {
-  const [rules, setRules] = useState<Rule[]>([]);
-  const [roles, setRoles] = useState<any[]>([]);
+  const [words, setWords] = useState(WORD_LIST);
+  const [overrides, setOverrides] = useState<Override[]>([]);
   const [schools, setSchools] = useState<any[]>([]);
-  const [form, setForm] = useState<Rule>({ length: 12, upper: true, lower: true, digits: true, special: false, specialSet: "#!?_-" });
+  const [roles, setRoles] = useState<any[]>([]);
+  const [form, setForm] = useState({ schoolId: "", roleId: "", length: 7, special: true, wordList: false });
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    api("/api/config/roles").then(d => setRoles(asArray(d))).catch(() => {});
+    api("/api/config/rules").then(d => { if (d.words) setWords(d.words); if (d.overrides) setOverrides(d.overrides); }).catch(() => {});
     api("/api/schools").then(d => setSchools(asArray(d))).catch(() => {});
+    api("/api/config/roles").then(d => setRoles(asArray(d))).catch(() => {});
   }, []);
 
-  function add() {
-    setRules(prev => [...prev, { ...form, id: crypto.randomUUID() }]);
+  async function save() {
+    await api("/api/config/rules", { method: "PUT", body: JSON.stringify({ words, overrides }) });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
   }
-  function remove(id: string) {
-    setRules(prev => prev.filter(r => r.id !== id));
+
+  function addOverride() {
+    if (!form.schoolId && !form.roleId) return;
+    setOverrides([...overrides, { ...form, id: crypto.randomUUID() }]);
+    setForm({ schoolId: "", roleId: "", length: 7, special: true, wordList: false });
   }
+
+  function removeOverride(id: string) {
+    setOverrides(overrides.filter(o => o.id !== id));
+  }
+
+  const rows = overrides.map(o => ({
+    ...o,
+    school: schools.find(sc => sc.id === o.schoolId)?.name || "Alle",
+    role: roles.find(r => r.id === o.roleId)?.label || "Alle",
+  }));
 
   return (
-    <div className="tab-panel active" style={{ display: "flex" }}>
-      <header className="toolbar"><h2 style={{ margin: 0 }}>Passwort-Regeln</h2></header>
-      <div style={{ padding: 16, overflow: "auto" }}>
-        <div className="card" style={{ marginBottom: 16, padding: 16 }}>
-          <h3 style={{ margin: "0 0 12px" }}>Standardregeln</h3>
-          <ul style={{ margin: 0, paddingLeft: 18, color: "var(--text-muted)", fontSize: ".85rem" }}>
-            <li>Grundschule-Schüler: 6-stelliges kindgerechtes Wort (100 Wörter), pro Klasse gleich, Wort nur einmal pro Klasse im Einsatz</li>
-            <li>Andere Schüler: 7 alphanumerisch, eindeutig pro Klasse, 4. Zeichen ? oder !</li>
-            <li>Personal: 9 Zeichen aus Buchstaben, Ziffern und #!?_-</li>
-          </ul>
-        </div>
+    <div className={s.page}>
+      <header className={s.toolbar}><h2 className={s.title}>Passwort-Regeln</h2></header>
+      <div className={s.scroll}>
+        <h3>Standardregeln (nicht änderbar)</h3>
+        <div className={s.section}><strong>Grundschule Schüler</strong><p className={s.muted}>6 Zeichen, Wort aus Liste, gleiches Passwort pro Klasse</p></div>
+        <div className={s.section}><strong>Andere Schüler</strong><p className={s.muted}>7 Zeichen alphanumerisch, Sonderzeichen (? oder !) an 4. Stelle, einzigartig pro Klasse</p></div>
+        <div className={s.section}><strong>Personal</strong><p className={s.muted}>9 Zeichen aus Zahlen, Buchstaben, Sonderzeichen (#!?_-)</p></div>
 
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16, alignItems: "flex-end" }}>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span className="filter-label">Rolle</span>
-            <select className="dd-trigger" value={form.roleId || ""} onChange={e => setForm({ ...form, roleId: e.target.value || undefined })}>
-              <option value="">alle</option>
-              {roles.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
-            </select>
-          </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span className="filter-label">Schule</span>
-            <select className="dd-trigger" value={form.schoolId || ""} onChange={e => setForm({ ...form, schoolId: e.target.value || undefined })}>
-              <option value="">alle</option>
-              {schools.map(s => <option key={s.id} value={s.id}>{s.sid} – {s.name}</option>)}
-            </select>
-          </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span className="filter-label">Länge</span>
-            <input className="search-input" type="number" min={6} max={32} value={form.length} onChange={e => setForm({ ...form, length: +e.target.value })} style={{ width: 80 }} />
-          </label>
-          <label className="chip" style={{ cursor: "pointer" }} onClick={() => setForm({ ...form, upper: !form.upper })}>
-            {form.upper ? "✓" : "○"} Groß
-          </label>
-          <label className="chip" style={{ cursor: "pointer" }} onClick={() => setForm({ ...form, lower: !form.lower })}>
-            {form.lower ? "✓" : "○"} Klein
-          </label>
-          <label className="chip" style={{ cursor: "pointer" }} onClick={() => setForm({ ...form, digits: !form.digits })}>
-            {form.digits ? "✓" : "○"} Ziffern
-          </label>
-          <label className="chip" style={{ cursor: "pointer" }} onClick={() => setForm({ ...form, special: !form.special })}>
-            {form.special ? "✓" : "○"} Sonder
-          </label>
-          <Button variant="primary" onClick={add}>Regel hinzufügen</Button>
-        </div>
+        <h3 className={s.mt}>Wortliste ({words.split(/\s+/).filter(Boolean).length} Wörter)</h3>
+        <textarea className={"search-input " + s.field} value={words} onChange={e => setWords(e.target.value)} rows={6} />
 
-        <div className="table-wrap">
-          <table className="data-table">
-            <thead><tr><th>Rolle</th><th>Schule</th><th>Länge</th><th>Zeichen</th><th></th></tr></thead>
-            <tbody>
-              {rules.map(r => (
-                <tr key={r.id}>
-                  <td>{roles.find(x => x.id === r.roleId)?.label || "alle"}</td>
-                  <td>{schools.find(x => x.id === r.schoolId)?.name || "alle"}</td>
-                  <td>{r.length}</td>
-                  <td>{[r.upper && "A-Z", r.lower && "a-z", r.digits && "0-9", r.special && (r.specialSet || "!@#")].filter(Boolean).join(" ")}</td>
-                  <td><Button variant="small" onClick={() => remove(r.id!)}>Entfernen</Button></td>
-                </tr>
-              ))}
-              {rules.length === 0 && <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)", padding: 16 }}>Keine zusätzlichen Regeln</td></tr>}
-            </tbody>
-          </table>
+        <h3 className={s.mt}>Überschreibungen</h3>
+        <p className={s.muted}>Spezifische Regeln für Schule und/oder Rolle überschreiben die Standards.</p>
+        <div className={s.row}>
+          <select className="search-input" value={form.schoolId} onChange={e => setForm({ ...form, schoolId: e.target.value })}>
+            <option value="">Alle Schulen</option>
+            {schools.map(sc => <option key={sc.id} value={sc.id}>{sc.name}</option>)}
+          </select>
+          <select className="search-input" value={form.roleId} onChange={e => setForm({ ...form, roleId: e.target.value })}>
+            <option value="">Alle Rollen</option>
+            {roles.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+          </select>
+          <input type="number" className="search-input" value={form.length} onChange={e => setForm({ ...form, length: +e.target.value })} min={4} max={16} />
+          <label className={s.check + (form.special ? " " + s.checkOn : "")}>
+            <input type="checkbox" checked={form.special} onChange={e => setForm({ ...form, special: e.target.checked })} /> Sonderzeichen
+          </label>
+          <label className={s.check + (form.wordList ? " " + s.checkOn : "")}>
+            <input type="checkbox" checked={form.wordList} onChange={e => setForm({ ...form, wordList: e.target.checked })} /> Wortliste
+          </label>
+          <Button variant="primary" onClick={addOverride}>Hinzufügen</Button>
+        </div>
+        <DataTable columns={[
+          { key: "school", label: "Schule" }, { key: "role", label: "Rolle" }, { key: "length", label: "Länge" },
+          { key: "special", label: "Sonderzeichen", render: (r: any) => r.special ? "Ja" : "Nein" },
+          { key: "wordList", label: "Wortliste", render: (r: any) => r.wordList ? "Ja" : "Nein" },
+          { key: "actions", label: "", render: (r: any) => <Button variant="small" onClick={() => removeOverride(r.id)}>Entfernen</Button> },
+        ]} rows={rows} rowKey="id" />
+
+        <div className={s.mt}>
+          <Button variant="primary" onClick={save}>Speichern</Button>
+          {saved && <span className={s.muted}>Gespeichert</span>}
         </div>
       </div>
     </div>

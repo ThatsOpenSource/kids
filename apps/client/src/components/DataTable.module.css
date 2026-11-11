@@ -1,0 +1,10 @@
+.wrap { width: 100%; overflow-x: auto; }
+.table { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: .82rem; }
+.table th, .table td { padding: 7px 10px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; vertical-align: middle; }
+.table thead th { background: var(--bg-soft); font-weight: 600; position: sticky; top: 0; }
+.check { width: 40px; text-align: center; }
+.actions { text-align: right; white-space: nowrap; }
+.table tr { height: 36px; }
+.table td { vertical-align: middle; }
+.empty { text-align: center; padding: 24px; color: var(--text-muted); }
+.chip { display: inline-block; padding: 1px 6px; margin-right: 4px; border-radius: 3px; background: var(--bg-muted, #eee); font-size: .75rem; }

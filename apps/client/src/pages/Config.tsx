@@ -1,141 +1,98 @@
 import { useEffect, useState } from "react";
 import { api, asArray } from "../lib/api";
-import { ErrorBox } from "../components/ErrorBox";
-import Button from "../components/Button";
 import DataTable from "../components/DataTable";
+import Button from "../components/Button";
+import PageHeader from "../components/PageHeader";
+import s from "../styles/page.module.css";
 
 export default function Config() {
   const [roles, setRoles] = useState<any[]>([]);
   const [flags, setFlags] = useState<any[]>([]);
   const [groupFlags, setGroupFlags] = useState<any[]>([]);
   const [schools, setSchools] = useState<any[]>([]);
-  const [gfForm, setGfForm] = useState({ flagId: "", roleId: "", schoolId: "" });
   const [openRole, setOpenRole] = useState(false);
   const [openFlag, setOpenFlag] = useState(false);
-  const [editRoleId, setEditRoleId] = useState<string | null>(null);
-  const [editFlagId, setEditFlagId] = useState<string | null>(null);
   const [roleForm, setRoleForm] = useState({ vceType: 411, dataId: "", label: "", aliases: "" });
   const [flagForm, setFlagForm] = useState({ dataId: "", label: "", requires: "" });
-  const [error, setError] = useState<any>(null);
+  const [gfForm, setGfForm] = useState({ flagId: "", roleId: "", schoolId: "" });
 
   const load = () => {
-    api("/api/config/roles").then(d => setRoles(asArray(d))).catch(() => setRoles([]));
-    api("/api/config/flags").then(d => setFlags(asArray(d))).catch(() => setFlags([]));
-    api("/api/config/group-flags").then(d => setGroupFlags(asArray(d))).catch(() => setGroupFlags([]));
-    api("/api/schools").then(d => setSchools(asArray(d))).catch(() => setSchools([]));
+    api("/api/config/roles").then(d => setRoles(asArray(d))).catch(() => {});
+    api("/api/config/flags").then(d => setFlags(asArray(d))).catch(() => {});
+    api("/api/schools").then(d => setSchools(asArray(d))).catch(() => {});
+    api("/api/config/group-flags").then(d => setGroupFlags(asArray(d))).catch(() => {});
   };
   useEffect(() => { load(); }, []);
 
-  function openRoleCreate() { setEditRoleId(null); setRoleForm({ vceType: 411, dataId: "", label: "", aliases: "" }); setOpenRole(true); }
-  function openRoleEdit(r: any) { setEditRoleId(r.id); setRoleForm({ vceType: r.vceType, dataId: r.dataId, label: r.label, aliases: (r.aliases || []).join(", ") }); setOpenRole(true); }
-  function openFlagCreate() { setEditFlagId(null); setFlagForm({ dataId: "", label: "", requires: "" }); setOpenFlag(true); }
-  function openFlagEdit(f: any) { setEditFlagId(f.id); setFlagForm({ dataId: f.dataId, label: f.label, requires: (f.requires || []).join(", ") }); setOpenFlag(true); }
-
   async function saveRole() {
-    setError(null);
-    try {
-      const body = { ...roleForm, aliases: roleForm.aliases.split(",").map(s => s.trim()).filter(Boolean) };
-      const method = editRoleId ? "PUT" : "POST";
-      const url = editRoleId ? `/api/config/roles/${editRoleId}` : "/api/config/roles";
-      await api(url, { method, body: JSON.stringify(body) });
-      setOpenRole(false); load();
-    } catch (e: any) {
-      setError(e.raw || { error: e.message, code: e.code, requestId: e.requestId, details: e.details });
-    }
+    await api("/api/config/roles", { method: "POST", body: JSON.stringify({ ...roleForm, aliases: roleForm.aliases.split(",").map(x => x.trim()).filter(Boolean) }) });
+    setOpenRole(false); load();
   }
-
   async function saveFlag() {
-    const body = { ...flagForm, requires: flagForm.requires.split(",").map(s => s.trim()).filter(Boolean) };
-    const method = editFlagId ? "PUT" : "POST";
-    const url = editFlagId ? `/api/config/flags/${editFlagId}` : "/api/config/flags";
-    await api(url, { method, body: JSON.stringify(body) });
+    await api("/api/config/flags", { method: "POST", body: JSON.stringify({ ...flagForm, requires: flagForm.requires.split(",").map(x => x.trim()).filter(Boolean) }) });
     setOpenFlag(false); load();
   }
+  async function assignGroup() {
+    if (!gfForm.flagId) return;
+    await api("/api/config/group-flags", { method: "POST", body: JSON.stringify(gfForm) });
+    setGfForm({ flagId: "", roleId: "", schoolId: "" }); load();
+  }
 
-  const roleCols = [
-    { key: "vceType", label: "Typ-Nr." },
-    { key: "dataId", label: "Daten-ID" },
-    { key: "label", label: "Bezeichnung" },
-    { key: "aliases", label: "Aliase", render: (r: any) => (r.aliases || []).join(", ") },
-    { key: "actions", label: "", render: (r: any) => <Button variant="small" onClick={() => openRoleEdit(r)}>Bearbeiten</Button> },
-  ];
-  const flagCols = [
-    { key: "dataId", label: "Daten-ID" },
-    { key: "label", label: "Bezeichnung" },
-    { key: "requires", label: "Voraussetzungen", render: (f: any) => (f.requires || []).join(", ") },
-    { key: "actions", label: "", render: (f: any) => <Button variant="small" onClick={() => openFlagEdit(f)}>Bearbeiten</Button> },
-  ];
+  const gfRows = groupFlags.map(g => ({ ...g, flag: g.flag?.label || "", role: roles.find(r => r.id === g.roleId)?.label || "–", school: schools.find(sc => sc.id === g.schoolId)?.name || "–" }));
 
   return (
-    <div className="tab-panel active" style={{ display: "flex", overflow: "auto" }}>
-      <header className="toolbar"><h2 style={{ margin: 0 }}>Rollen & Flags</h2></header>
-      <ErrorBox error={error} />
-      <div style={{ padding: 16 }}>
-        <h3>Rollen</h3>
-        <Button variant="primary" onClick={openRoleCreate}>Rolle anlegen</Button>
-        {openRole && (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
-            <div style={{ background: "var(--panel)", padding: 24, borderRadius: "var(--radius)", width: 420, border: "1px solid var(--border)" }}>
-              <h3>{editRoleId ? "Rolle bearbeiten" : "Neue Rolle"}</h3>
-              <input className="search-input" style={{ width: "100%", marginBottom: 8 }} type="number" placeholder="vceType" value={roleForm.vceType} onChange={e => setRoleForm({ ...roleForm, vceType: +e.target.value })} />
-              <input className="search-input" style={{ width: "100%", marginBottom: 8 }} placeholder="dataId" value={roleForm.dataId} onChange={e => setRoleForm({ ...roleForm, dataId: e.target.value })} />
-              <input className="search-input" style={{ width: "100%", marginBottom: 8 }} placeholder="Anzeigename" value={roleForm.label} onChange={e => setRoleForm({ ...roleForm, label: e.target.value })} />
-              <input className="search-input" style={{ width: "100%", marginBottom: 8 }} placeholder="Aliases (kommagetrennt)" value={roleForm.aliases} onChange={e => setRoleForm({ ...roleForm, aliases: e.target.value })} />
-              <Button variant="primary" onClick={saveRole}>Speichern</Button>
-              <Button style={{ marginLeft: 8 }} onClick={() => setOpenRole(false)}>Abbrechen</Button>
-            </div>
-          </div>
-        )}
-        <div style={{ marginTop: 12 }}><DataTable columns={roleCols} rows={roles} rowKey="id" /></div>
+    <div className={s.page}>
+      <PageHeader title="Rollen & Flags" actions={<><Button variant="primary" onClick={() => setOpenRole(true)}>Rolle</Button><Button onClick={() => setOpenFlag(true)}>Flag</Button></>} />
+      <div className={s.scroll}>
+      <DataTable columns={[{ key: "vceType", label: "Typ-Nr." }, { key: "dataId", label: "Daten-ID" }, { key: "label", label: "Bezeichnung" }]} rows={roles} rowKey="id" />
 
-        <h3 style={{ marginTop: 32 }}>Flags</h3>
-        <Button variant="primary" onClick={openFlagCreate}>Flag anlegen</Button>
-        {openFlag && (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
-            <div style={{ background: "var(--panel)", padding: 24, borderRadius: "var(--radius)", width: 420, border: "1px solid var(--border)" }}>
-              <h3>{editFlagId ? "Flag bearbeiten" : "Neuer Flag"}</h3>
-              <input className="search-input" style={{ width: "100%", marginBottom: 8 }} placeholder="dataId" value={flagForm.dataId} onChange={e => setFlagForm({ ...flagForm, dataId: e.target.value })} />
-              <input className="search-input" style={{ width: "100%", marginBottom: 8 }} placeholder="Label" value={flagForm.label} onChange={e => setFlagForm({ ...flagForm, label: e.target.value })} />
-              <input className="search-input" style={{ width: "100%", marginBottom: 8 }} placeholder="Requires (dataIds, kommagetrennt)" value={flagForm.requires} onChange={e => setFlagForm({ ...flagForm, requires: e.target.value })} />
-              <Button variant="primary" onClick={saveFlag}>Speichern</Button>
-              <Button style={{ marginLeft: 8 }} onClick={() => setOpenFlag(false)}>Abbrechen</Button>
-            </div>
-          </div>
-        )}
-        <div style={{ marginTop: 12 }}><DataTable columns={flagCols} rows={flags} rowKey="id" /></div>
+      <h2 className={s.mt}>Flags</h2>
+      <Button variant="primary" onClick={() => setOpenFlag(true)}>Flag anlegen</Button>
+      <DataTable columns={[{ key: "dataId", label: "Daten-ID" }, { key: "label", label: "Bezeichnung" }, { key: "requires", label: "Voraussetzungen", render: (f: any) => (f.requires || []).join(", ") }]} rows={flags} rowKey="id" />
 
-        <h3 style={{ marginTop: 32 }}>Gruppen-Flags</h3>
-        <p style={{ color: "var(--text-muted)", fontSize: ".85rem" }}>Werden dynamisch in Tabellen und Exporte eingefügt, ohne die Personen-Datensätze zu verändern.</p>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12, alignItems: "flex-end" }}>
-          <select className="dd-trigger" value={gfForm.flagId} onChange={e => setGfForm({ ...gfForm, flagId: e.target.value })}>
-            <option value="">Flag</option>
-            {flags.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
-          </select>
-          <select className="dd-trigger" value={gfForm.roleId} onChange={e => setGfForm({ ...gfForm, roleId: e.target.value })}>
-            <option value="">Rolle (optional)</option>
-            {roles.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
-          </select>
-          <select className="dd-trigger" value={gfForm.schoolId} onChange={e => setGfForm({ ...gfForm, schoolId: e.target.value })}>
-            <option value="">Schule (optional)</option>
-            {schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-          <Button variant="primary" onClick={async () => {
-            if (!gfForm.flagId) return;
-            await api("/api/config/group-flags", { method: "POST", body: JSON.stringify(gfForm) });
-            setGfForm({ flagId: "", roleId: "", schoolId: "" });
-            load();
-          }}>Zuweisen</Button>
-        </div>
-        <DataTable
-          columns={[
-            { key: "flag", label: "Flag" },
-            { key: "role", label: "Rolle" },
-            { key: "school", label: "Schule" },
-            { key: "actions", label: "", render: (g: any) => <Button variant="small" onClick={async () => { await api(`/api/config/group-flags/${g.id}`, { method: "DELETE" }); load(); }}>Entfernen</Button> },
-          ]}
-          rows={groupFlags}
-          rowKey="id"
-        />
+      <h3 className={s.mt}>Gruppen-Flags</h3>
+      <p className={s.muted}>Werden dynamisch in Tabellen und Exporte eingefügt, ohne die Personen-Datensätze zu verändern.</p>
+      <div className={s.row}>
+        <select className="search-input" value={gfForm.flagId} onChange={e => setGfForm({ ...gfForm, flagId: e.target.value })}>
+          <option value="">Flag</option>
+          {flags.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+        </select>
+        <select className="search-input" value={gfForm.roleId} onChange={e => setGfForm({ ...gfForm, roleId: e.target.value })}>
+          <option value="">Rolle (optional)</option>
+          {roles.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+        </select>
+        <select className="search-input" value={gfForm.schoolId} onChange={e => setGfForm({ ...gfForm, schoolId: e.target.value })}>
+          <option value="">Schule (optional)</option>
+          {schools.map(sc => <option key={sc.id} value={sc.id}>{sc.name}</option>)}
+        </select>
+        <Button variant="primary" onClick={assignGroup}>Zuweisen</Button>
+      </div>
+      <DataTable columns={[
+        { key: "flag", label: "Flag" }, { key: "role", label: "Rolle" }, { key: "school", label: "Schule" },
+        { key: "actions", label: "", render: (g: any) => <Button variant="small" onClick={async () => { await api(`/api/config/group-flags/${g.id}`, { method: "DELETE" }); load(); }}>Entfernen</Button> },
+      ]} rows={gfRows} rowKey="id" />
+
+      {openRole && (
+        <div className={s.overlay}><div className={s.modal}>
+          <h3>Rolle anlegen</h3>
+          <input className={"search-input " + s.field} type="number" placeholder="vceType" value={roleForm.vceType} onChange={e => setRoleForm({ ...roleForm, vceType: +e.target.value })} />
+          <input className={"search-input " + s.field} placeholder="dataId" value={roleForm.dataId} onChange={e => setRoleForm({ ...roleForm, dataId: e.target.value })} />
+          <input className={"search-input " + s.field} placeholder="Bezeichnung" value={roleForm.label} onChange={e => setRoleForm({ ...roleForm, label: e.target.value })} />
+          <input className={"search-input " + s.field} placeholder="Aliases (kommagetrennt)" value={roleForm.aliases} onChange={e => setRoleForm({ ...roleForm, aliases: e.target.value })} />
+          <Button variant="primary" onClick={saveRole}>Speichern</Button>
+          <Button onClick={() => setOpenRole(false)}>Abbrechen</Button>
+        </div></div>
+      )}
+      {openFlag && (
+        <div className={s.overlay}><div className={s.modal}>
+          <h3>Flag anlegen</h3>
+          <input className={"search-input " + s.field} placeholder="dataId" value={flagForm.dataId} onChange={e => setFlagForm({ ...flagForm, dataId: e.target.value })} />
+          <input className={"search-input " + s.field} placeholder="Bezeichnung" value={flagForm.label} onChange={e => setFlagForm({ ...flagForm, label: e.target.value })} />
+          <input className={"search-input " + s.field} placeholder="Requires (dataIds, kommagetrennt)" value={flagForm.requires} onChange={e => setFlagForm({ ...flagForm, requires: e.target.value })} />
+          <Button variant="primary" onClick={saveFlag}>Speichern</Button>
+          <Button onClick={() => setOpenFlag(false)}>Abbrechen</Button>
+        </div></div>
+      )}
       </div>
     </div>
   );

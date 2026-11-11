@@ -1,64 +1,103 @@
 import { Router } from "express";
 import { prisma } from "../db/prisma";
-import { schoolSchema } from "../validation/schemas";
-import { z } from "zod";
-import { asyncHandler } from "../middleware/errorHandler";
-import { logger } from "../services/logger";
+import { log } from "../services/audit";
+import { ok, fail } from "../lib/respond";
 
 const router = Router();
 
-const updateSchoolSchema = schoolSchema.partial().extend({
-  config: z.record(z.any()).optional(),
+router.get("/", async (_req, res) => {
+  ok(res, await prisma.school.findMany({ orderBy: { sid: "asc" }, include: { type: true } }));
 });
 
-router.get("/", asyncHandler(async (_req, res) => {
-  const schools = await prisma.school.findMany({ orderBy: { sid: "asc" } });
-  res.json(schools);
-}));
-
-router.post("/", asyncHandler(async (req, res) => {
-  const parsed = schoolSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: "Validierung fehlgeschlagen", details: parsed.error.issues });
-
-  const sid = parsed.data.sid;
+router.post("/", async (req, res) => {
+  const { sid, sgid, name, config } = req.body;
+  if (!sid || sid.length !== 5) return fail(res, 400, "SID muss 5-stellig sein");
   const soid = sid.slice(-2);
-  const typeMap: Record<string, string> = { "21": "Grundschule", "22": "Regelschule", "23": "Gymnasium", "24": "Berufsschule", "27": "Förderschule" };
-  const schoolType = typeMap[sid.slice(0, 2)] || parsed.data.schoolType || "Unbekannt";
+  const typeId = sid.slice(0, 2);
+  const typeExists = await prisma.schoolTypeConfig.findUnique({ where: { prefix: typeId } });
+  if (!typeExists) return fail(res, 400, `Kein Schultyp für Prefix ${typeId}`);
+  const school = await prisma.school.create({ data: { sid, sgid, soid, name, typeId, config: config || {} } });
+  await log("school", school.id, "create", (req as any).userId, { sid, name });
+  ok(res, school, 201);
+});
 
-  const school = await prisma.school.create({
-    data: { ...parsed.data, soid, schoolType, config: parsed.data.config || {} },
-  });
-  logger.audit("School created", { sid: school.sid });
-  res.status(201).json(school);
-}));
+router.get("/type-configs", async (_req, res) => ok(res, await prisma.schoolTypeConfig.findMany()));
+router.post("/type-configs", async (req, res) => {
+  const { prefix, label } = req.body;
+  if (!prefix || !label) return fail(res, 400, "prefix und label erforderlich");
+  const tc = await prisma.schoolTypeConfig.upsert({ where: { prefix }, update: { label }, create: { prefix, label } });
+  ok(res, tc, 201);
+});
+router.delete("/type-configs/:prefix", async (req, res) => {
+  const used = await prisma.school.count({ where: { typeId: req.params.prefix } });
+  if (used) return fail(res, 409, `Typ wird von ${used} Schulen verwendet`);
+  await prisma.schoolTypeConfig.delete({ where: { prefix: req.params.prefix } });
+  ok(res, { ok: true });
+});
 
-router.put("/:id", asyncHandler(async (req, res) => {
-  const parsed = updateSchoolSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: "Validierung fehlgeschlagen", details: parsed.error.issues });
-  const school = await prisma.school.update({ where: { id: req.params.id }, data: parsed.data });
-  logger.audit("School updated", { id: school.id, sid: school.sid });
-  res.json(school);
-}));
+function cleanName(name: string): string {
+  return name.replace(/[^\w\säöüÄÖÜß\-]/g, "").replace(/\s+/g, " ").trim();
+}
 
-router.post("/import-csv", asyncHandler(async (req, res) => {
+function parseCsvLine(line: string): string[] {
+  const sep = line.includes(";") ? ";" : ",";
+  return line.split(sep).map(s => s.trim().replace(/^"|"$/g, "").replace(/""/g, '"'));
+}
+
+router.post("/import-preview", async (req, res) => {
   const { csv } = req.body;
-  if (!csv) return res.status(400).json({ error: "csv fehlt" });
-  const lines = csv.trim().split(/\r?\n/).slice(1);
-  let created = 0;
+  if (!csv) return fail(res, 400, "csv fehlt");
+  const lines = csv.trim().replace(/\uFEFF/, "").split(/\r?\n/).slice(1);
+  const existing = await prisma.school.findMany();
+  const bySid = new Map(existing.map(s => [s.sid, s]));
+  const typeConfigs = await prisma.schoolTypeConfig.findMany();
+  console.log(`[school-import] ${lines.length} lines, ${typeConfigs.length} type configs`);
+  const typeMap = new Map(typeConfigs.map(t => [t.prefix, t.label]));
+  const preview: any[] = [];
+  const rejected: any[] = [];
   for (const line of lines) {
-    const [sid, sgid, name, schoolType] = line.split(",").map(s => s.trim());
-    if (!sid || sid.length !== 5) continue;
+    const [sid, sgid, name] = parseCsvLine(line);
+    if (!sid || sid.length !== 5) { rejected.push({ line, reason: "SID ungültig" }); continue; }
     const soid = sid.slice(-2);
-    const typeMap: Record<string, string> = { "21": "Grundschule", "22": "Regelschule", "23": "Gymnasium", "24": "Berufsschule", "27": "Förderschule" };
+    const prefix = sid.slice(0, 2);
+    const schoolType = typeMap.get(prefix);
+    if (!schoolType) { rejected.push({ sid, reason: `Kein Typ für Prefix ${prefix}` }); continue; }
+    preview.push({ sid, sgid, soid, name: cleanName(name), schoolType, isNew: !bySid.has(sid) });
+  }
+  ok(res, { preview, rejected, newCount: preview.filter(r => r.isNew).length });
+  console.log(`[school-import] preview: ${preview.length} valid, ${rejected.length} rejected`);
+});
+
+router.post("/import-csv", async (req, res) => {
+  const { csv, selected } = req.body;
+  if (!csv) return fail(res, 400, "csv fehlt");
+  const lines = csv.trim().replace(/\uFEFF/, "").split(/\r?\n/).slice(1);
+  const sel = new Set(selected || []);
+  const typeConfigs = await prisma.schoolTypeConfig.findMany();
+  const typeMap = new Map(typeConfigs.map(t => [t.prefix, t.label]));
+  let created = 0, updated = 0, skipped = 0;
+  for (const line of lines) {
+    const [sid, sgid, name] = parseCsvLine(line);
+    if (!sid || sid.length !== 5) { skipped++; continue; }
+    if (sel.size && !sel.has(sid)) continue;
+    const soid = sid.slice(-2);
+    const schoolType = typeMap.get(sid.slice(0, 2));
+    if (!schoolType) { skipped++; continue; }
+    const existing = await prisma.school.findUnique({ where: { sid } });
     await prisma.school.upsert({
       where: { sid },
-      update: { sgid, name, schoolType: schoolType || typeMap[sid.slice(0, 2)] || "Unbekannt" },
-      create: { sid, sgid, soid, name, schoolType: schoolType || typeMap[sid.slice(0, 2)] || "Unbekannt" },
+      update: { sgid, soid, name, typeId: sid.slice(0, 2) },
+      create: { sid, sgid, soid, name, typeId: sid.slice(0, 2) },
     });
-    created++;
+    existing ? updated++ : created++;
   }
-  logger.audit("Schools imported from CSV", { count: created });
-  res.json({ imported: created });
-}));
+  ok(res, { created, updated, skipped });
+});
+
+router.put("/:id", async (req, res) => {
+  const school = await prisma.school.update({ where: { id: req.params.id }, data: req.body });
+  await log("school", school.id, "update", (req as any).userId, req.body);
+  ok(res, school);
+});
 
 export default router;

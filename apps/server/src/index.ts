@@ -1,75 +1,54 @@
 import express from "express";
 import cors from "cors";
-import helmet from "helmet";
-import compression from "compression";
-import hpp from "hpp";
-import rateLimit from "express-rate-limit";
 import dotenv from "dotenv";
-import crypto from "crypto";
+import path from "path";
 import { prisma } from "./db/prisma";
 import { requireAuth } from "./middleware/auth";
-import { errorHandler } from "./middleware/errorHandler";
-import { logger } from "./services/logger";
-
 import authRouter from "./routes/auth";
-import importRouter from "./routes/import";
+import usersRouter from "./routes/users";
 import personsRouter from "./routes/persons";
 import schoolsRouter from "./routes/schools";
 import configRouter from "./routes/config";
-import exportRouter from "./routes/export";
-import passwordsRouter from "./routes/passwords";
+import historyRouter from "./routes/history";
+import importRouter from "./routes/import";
 import asmRouter from "./routes/asm";
+import passwordsRouter from "./routes/passwords";
+import exportRouter from "./routes/export";
+import { requestLogger, errorHandler } from "./middleware/requestLogger";
+import { gzipYesterday, logError } from "./lib/logger";
+import { initRedis } from "./lib/redis";
 
-dotenv.config();
-
+dotenv.config({ path: path.resolve(process.cwd(), "../../.env") });
+dotenv.config({ path: path.resolve(process.cwd(), ".env"), override: true });
+console.log(`Env: pepper=${process.env.PASSWORD_PEPPER ? "set" : "missing"}, admin=${process.env.ADMIN_EMAIL || "default"}`);
+if (process.env.NODE_ENV !== "production") {
+  console.log(`Dev login: ${process.env.ADMIN_EMAIL || "admin@kids.local"} / ${process.env.ADMIN_PASSWORD || "ChangeMe123!"}`);
+}
 const app = express();
-const PORT = process.env.PORT || 7420;
+app.use(cors());
+app.use(express.json({ limit: "50mb" }));
+app.use(requestLogger);
 
-const c = {
-  reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m",
-  cyan: "\x1b[36m", green: "\x1b[32m", yellow: "\x1b[33m",
-};
-
-app.use(helmet());
-app.use(compression());
-app.use(hpp());
-app.use(cors({ origin: process.env.CORS_ORIGIN || "http://localhost:7430", credentials: true }));
-app.use(express.json({ limit: "20mb" }));
-app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 200 }));
-
-app.use((req, _res, next) => {
-  (req as any).requestId = crypto.randomUUID().slice(0, 8);
-  const t = new Date().toISOString().slice(11, 19);
-  console.log(`${c.dim}${t}${c.reset} ${c.cyan}${req.method}${c.reset} ${req.path} ${c.dim}${(req as any).requestId}${c.reset}`);
-  logger.info(`${req.method} ${req.path}`, { requestId: (req as any).requestId });
-  next();
-});
-
-app.get("/health", (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
-
+app.get("/api/health", (_req, res) => res.json({ ok: true }));
 app.use("/api/auth", authRouter);
-app.use("/api/import", requireAuth, importRouter);
+app.use("/api/users", requireAuth, usersRouter);
 app.use("/api/persons", requireAuth, personsRouter);
 app.use("/api/schools", requireAuth, schoolsRouter);
 app.use("/api/config", requireAuth, configRouter);
-app.use("/api/export", requireAuth, exportRouter);
-app.use("/api/passwords", requireAuth, passwordsRouter);
+app.use("/api/history", requireAuth, historyRouter);
+app.use("/api/import", requireAuth, importRouter);
 app.use("/api/asm", requireAuth, asmRouter);
+app.use("/api/passwords", requireAuth, passwordsRouter);
+app.use("/api/export", requireAuth, exportRouter);
 
+const port = process.env.PORT || 7420;
 app.use(errorHandler);
-
-app.listen(PORT, () => {
-  console.log("");
-  console.log(`${c.bold}${c.green}  KIDS API${c.reset}  ${c.dim}ready${c.reset}`);
-  console.log(`${c.dim}  Local:${c.reset}   ${c.cyan}http://localhost:${PORT}${c.reset}`);
-  console.log(`${c.dim}  Health:${c.reset}  ${c.cyan}http://localhost:${PORT}/health${c.reset}`);
-  console.log(`${c.dim}  Logs:${c.reset}    ${c.cyan}${process.env.LOG_DIR || "./logs"}${c.reset}`);
-  console.log("");
-  logger.info("Server started", { port: PORT });
+process.on("uncaughtException", (err) => logError(err, { source: "uncaughtException" }));
+process.on("unhandledRejection", (err: any) => logError(err, { source: "unhandledRejection" }));
+app.listen(port, async () => {
+  gzipYesterday();
+  await initRedis();
+  console.log(`Server on :${port}`);
 });
 
-process.on("SIGTERM", async () => {
-  logger.info("Shutting down");
-  await prisma.$disconnect();
-  process.exit(0);
-});
+process.on("SIGTERM", () => prisma.$disconnect());

@@ -4,15 +4,15 @@ import { useDebounce } from "../lib/useDebounce";
 import DataTable, { Column } from "../components/DataTable";
 import Button from "../components/Button";
 import FilterDropdown from "../components/FilterDropdown";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faCopy } from "@fortawesome/free-solid-svg-icons";
+import { HistoryDialog } from "./History";
+import { PERSON_COLUMNS } from "../lib/columns";
+import styles from "./Persons.module.css";
+import s from "../styles/page.module.css";
 
 function Chip({ yes, yesLabel, noLabel }: { yes: boolean; yesLabel: string; noLabel: string }) {
-  return (
-    <span className="chip" style={{
-      background: yes ? "#111" : "var(--bg)",
-      color: yes ? "#fff" : "var(--text-muted)",
-      borderColor: yes ? "#111" : "var(--border)",
-    }}>{yes ? yesLabel : noLabel}</span>
-  );
+  return <span className={s.chip + " " + (yes ? s.chipOn : s.chipOff)}>{yes ? yesLabel : noLabel}</span>;
 }
 
 function CopyPw({ id }: { id: string }) {
@@ -23,35 +23,12 @@ function CopyPw({ id }: { id: string }) {
     setDone(true);
     setTimeout(() => setDone(false), 1500);
   }
-  return <Button variant="small" onClick={copy}>{done ? "Kopiert" : "Kopieren"}</Button>;
+  return <button onClick={copy} title="Kopieren"><FontAwesomeIcon icon={faCopy} /></button>;
 }
 
-const COLUMNS: Column[] = [
-  { key: "sid", label: "SID" },
-  { key: "sgid", label: "SGID" },
-  { key: "soid", label: "SOID" },
-  { key: "schoolName", label: "Schulname" },
-  { key: "schoolType", label: "Schultyp" },
-  { key: "klasse", label: "Klasse" },
-  { key: "stufe", label: "Stufe" },
-  { key: "roles", label: "Rolle", render: (r) => (r.roles || []).map((x: string) => <span key={x} className="chip chip-role">{x}</span>) },
-  { key: "lkid", label: "LKID" },
-  { key: "name", label: "Name" },
-  { key: "firstName", label: "Vorname" },
-  { key: "dateOfBirth", label: "Geburt" },
-  { key: "username", label: "Benutzername" },
-  { key: "appleId", label: "Apple ID" },
-  { key: "email", label: "persön. E-Mail" },
-  { key: "systemEmail", label: "System-E-Mail" },
-  { key: "flags", label: "Flags", render: (r) => (r.flagLabels || r.flags || []).map((f: string) => <span key={f} className="chip chip-flag">{f}</span>) },
-  { key: "active", label: "aktiv. Besuch", render: (r) => <Chip yes={r.active} yesLabel="Aktiv" noLabel="Inaktiv" /> },
-  { key: "terminated", label: "terminiert?", render: (r) => <Chip yes={r.terminated} yesLabel="Terminiert" noLabel="Offen" /> },
-  { key: "pw", label: "Passwort", render: (r) => <span style={{ letterSpacing: 2, fontFamily: "monospace" }}>{r.hasPassword ? "•••••" : "–"}</span> },
-  { key: "pwcopy", label: "", render: (r) => r.hasPassword ? <CopyPw id={r.id} /> : null },
-];
-
-type SortState = { key: string; dir: "asc" | "desc" } | null;
 type PwMode = "default" | "custom" | "ruleset";
+
+const COLUMNS: Column[] = PERSON_COLUMNS;
 
 export default function Persons() {
   const [data, setData] = useState<any>({ persons: [], total: 0 });
@@ -60,14 +37,16 @@ export default function Persons() {
   const [search, setSearch] = useState("");
   const debounced = useDebounce(search, 200);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [sort, setSort] = useState<SortState>(null);
   const [filterSchool, setFilterSchool] = useState<string[]>([]);
   const [filterRole, setFilterRole] = useState<string[]>([]);
   const [filterFlag, setFilterFlag] = useState<string[]>([]);
   const [filterStufe, setFilterStufe] = useState<string[]>([]);
+  const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(null);
   const [allRoles, setAllRoles] = useState<any[]>([]);
   const [allFlags, setAllFlags] = useState<any[]>([]);
   const [allSchools, setAllSchools] = useState<any[]>([]);
+  const [overview, setOverview] = useState<any>(null);
+  const [edit, setEdit] = useState<any>(null);
   const [pwOpen, setPwOpen] = useState(false);
   const [pwMode, setPwMode] = useState<PwMode>("default");
   const [pwConfirm, setPwConfirm] = useState("");
@@ -75,24 +54,28 @@ export default function Persons() {
   const [pwCustom, setPwCustom] = useState("");
   const [pwForce, setPwForce] = useState(false);
   const [pwBusy, setPwBusy] = useState(false);
+  const [historyId, setHistoryId] = useState<string | null>(null);
 
   useEffect(() => {
-    api("/api/config/roles").then(d => setAllRoles(asArray(d))).catch(() => {});
-    api("/api/config/flags").then(d => setAllFlags(asArray(d))).catch(() => {});
-    api("/api/schools").then(d => setAllSchools(asArray(d))).catch(() => {});
+    let c = false;
+    api("/api/config/roles").then(d => { if (!c) setAllRoles(asArray(d)); }).catch(() => {});
+    api("/api/config/flags").then(d => { if (!c) setAllFlags(asArray(d)); }).catch(() => {});
+    api("/api/schools").then(d => { if (!c) setAllSchools(asArray(d)); }).catch(() => {});
+    return () => { c = true; };
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
+    let c = false;
     const params = new URLSearchParams({ page: String(page), limit: String(limit) });
     if (filterSchool.length) params.set("school", filterSchool.join(","));
     if (filterRole.length) params.set("role", filterRole.join(","));
     if (filterFlag.length) params.set("flag", filterFlag.join(","));
     if (filterStufe.length) params.set("stufe", filterStufe.join(","));
     if (debounced) params.set("q", debounced);
-    api(`/api/persons?${params}`).then(d => { if (!cancelled) setData(d); }).catch(() => { if (!cancelled) setData({ persons: [], total: 0 }); });
-    return () => { cancelled = true; };
-  }, [page, limit, filterSchool, filterRole, filterFlag, filterStufe, debounced]);
+    if (sort) { params.set("sort", sort.key); params.set("dir", sort.dir); }
+    api(`/api/persons?${params}`).then(d => { if (!c) setData(d); }).catch(() => { if (!c) setData({ persons: [], total: 0 }); });
+    return () => { c = true; };
+  }, [page, limit, filterSchool, filterRole, filterFlag, filterStufe, debounced, sort]);
 
   const schoolOpts = allSchools.map(s => ({ value: s.sid, label: `${s.sid} – ${s.name}` }));
   const roleOpts = allRoles.map(r => ({ value: r.label, label: r.label }));
@@ -100,183 +83,98 @@ export default function Persons() {
   const stufeOpts = ["1","2","3","4","5","6","7","8","9","10","11","12","13"].map(s => ({ value: s, label: s }));
 
   const allPersons = asArray(data.persons);
-
   const filtered = useMemo(() => {
-    let list = allPersons;
-    if (debounced) {
-      const tokens = debounced.trim().split(/\s+/);
-      list = list.filter((p: any) => {
-        return tokens.every(tok => {
-          const m = tok.match(/^(\w+):(.*)$/);
-          if (m) {
-            const [, prefix, val] = m;
-            const q = val.toLowerCase();
-            const map: Record<string, string[]> = {
-              role: p.roles || [],
-              vce: (p.vceTypes || []).map(String),
-              flag: p.flags || [],
-              school: [p.sid, p.sgid, p.schoolName],
-              stufe: [p.stufe],
-              klasse: [p.klasse],
-              name: [p.name, p.firstName],
-              lkid: [p.lkid],
-              user: [p.username],
-            };
-            const fields = map[prefix.toLowerCase()] || [];
-            return fields.some(f => String(f || "").toLowerCase().includes(q));
-          }
-          const q = tok.toLowerCase();
-          const blob = [p.lkid, p.name, p.firstName, p.username, p.sid, p.sgid, p.soid, p.schoolName, p.klasse, p.stufe, ...(p.roles || []), ...(p.roleDataIds || []), ...(p.vceTypes || []).map(String), ...(p.flags || [])].join(" ").toLowerCase();
-          return blob.includes(q);
-        });
-      });
-    }
+    if (!debounced) return allPersons;
+    const q = debounced.toLowerCase();
+    return allPersons.filter((p: any) => [p.lkid, p.name, p.firstName, p.username, p.sid, p.email].join(" ").toLowerCase().includes(q));
+  }, [allPersons, debounced]);
 
-    if (!sort) {
-      list = [...list].sort((a, b) => {
-        const sa = a.sid || ""; const sb = b.sid || "";
-        if (sa !== sb) return sa.localeCompare(sb);
-        const ra = (a.roles || [])[0] || ""; const rb = (b.roles || [])[0] || "";
-        if (ra !== rb) return ra.localeCompare(rb);
-        if (a.isPupil && b.isPupil) {
-          const ga = a.stufe || ""; const gb = b.stufe || "";
-          if (ga !== gb) return ga.localeCompare(gb, "de", { numeric: true });
-          const ca = a.klasse || ""; const cb = b.klasse || "";
-          if (ca !== cb) return ca.localeCompare(cb, "de");
-        }
-        return (a.name || "").localeCompare(b.name || "", "de");
-      });
-    } else {
-      list = [...list].sort((a, b) => {
-        const va = String(a[sort.key] ?? ""); const vb = String(b[sort.key] ?? "");
-        return sort.dir === "asc" ? va.localeCompare(vb, "de") : vb.localeCompare(va, "de");
-      });
-    }
-    return list;
-  }, [allPersons, debounced, sort, filterSchool, filterRole, filterFlag, filterStufe]);
-
-  const totalPages = Math.max(1, Math.ceil((data.total || 1) / limit));
-  const pageIds = filtered.map((p: any) => p.id);
-  const allPageSelected = pageIds.length > 0 && pageIds.every((id: string) => selected.has(id));
-  const needStepUp = selected.size > 3 || pwForce;
-
-  function toggle(id: string, checked: boolean) {
-    setSelected(prev => { const n = new Set(prev); checked ? n.add(id) : n.delete(id); return n; });
-  }
-  function toggleAll(checked: boolean) {
-    setSelected(prev => {
-      const n = new Set(prev);
-      if (checked) pageIds.forEach((id: string) => n.add(id));
-      else pageIds.forEach((id: string) => n.delete(id));
-      return n;
-    });
-  }
-  function cycleSort(key: string) {
-    setSort(prev => {
-      if (!prev || prev.key !== key) return { key, dir: "asc" };
-      if (prev.dir === "asc") return { key, dir: "desc" };
-      return null;
-    });
-  }
-
+  const totalPages = Math.max(1, Math.ceil(data.total / limit));
+  const needStepUp = selected.size > 3;
   async function doGenerate() {
-    if (needStepUp && (!pwConfirm || !pwTotp)) return;
     setPwBusy(true);
-    try {
-      const body: any = { scope: "person", refs: [...selected], force: pwForce, confirmPassword: pwConfirm || "ok", mode: pwMode };
-      if (pwMode === "custom") body.customPassword = pwCustom;
-      const res = await api("/api/passwords/generate", { method: "POST", body: JSON.stringify(body) });
-      if (res.generated > 0) {
-        setData((prev: any) => ({
-          ...prev,
-          persons: prev.persons.map((p: any) => selected.has(p.id) ? { ...p, hasPassword: true } : p),
-        }));
-      }
-      setPwOpen(false);
-      setSelected(new Set());
-      setPwConfirm(""); setPwTotp(""); setPwCustom(""); setPwForce(false); setPwMode("default");
-    } catch { /* ErrorBox could be wired */ }
-    setPwBusy(false);
+    const body: any = { personIds: [...selected], mode: pwMode, force: pwForce };
+    if (pwMode === "custom") body.customPassword = pwCustom;
+    if (needStepUp) { body.confirmPassword = pwConfirm; body.totpCode = pwTotp; }
+    await api("/api/passwords/generate", { method: "POST", body: JSON.stringify(body) });
+    setPwBusy(false); setPwOpen(false); setPwConfirm(""); setPwTotp(""); setPwCustom(""); setPwForce(false);
   }
 
-  const cols = COLUMNS.map(c => ({
-    ...c,
-    label: c.key === "pwcopy" ? "" : (
-      <span style={{ cursor: "pointer", userSelect: "none" }} onClick={() => cycleSort(c.key)}>
-        {c.label}{sort?.key === c.key ? (sort.dir === "asc" ? " ↑" : " ↓") : ""}
-      </span>
-    ) as any,
-  }));
-
-  const previewText = pwMode === "custom" ? `Einheitlich: ${pwCustom || "(leer)"}` : pwMode === "ruleset" ? "Regeln aus Passwort-Regeln" : "Standardregeln (Grundschule-Wort / 7-alnum / 9-Staff)";
+  const cols: Column[] = [...COLUMNS, { key: "pw", label: "Passwort", render: (r) => <span className={s.pw}>{r.hasPassword ? "•••••" : "–"}</span> }, { key: "pwcopy", label: "", render: (r) => r.hasPassword ? <CopyPw id={r.id} /> : null }, { key: "actions", label: "", render: (r) => <><Button variant="small" onClick={() => api(`/api/persons/${r.id}`).then(setEdit)}>Bearbeiten</Button><Button variant="small" onClick={() => setHistoryId(r.id)}>Historie</Button></> }];
 
   return (
-    <div className="tab-panel active" style={{ display: "flex" }}>
-      <header className="toolbar toolbar-stacked">
-        <div className="toolbar-row">
-          <h2 style={{ margin: 0 }}>Personen</h2>
-          <span className="toolbar-spacer" />
-          <span className="status-chip">{data.total || 0} Einträge</span>
-          {selected.size > 0 && <span className="status-chip">{selected.size} ausgewählt</span>}
-          {selected.size > 0 && <Button variant="small" onClick={() => setPwOpen(true)}>Passwörter generieren</Button>}
-        </div>
-        <div className="toolbar-row filters">
-          <input type="search" className="search-input" placeholder="role:Lehrer flag:iot school:23045 stufe:9 name:Müller" value={search} onChange={e => setSearch(e.target.value)} />
-          <FilterDropdown label="Schule" options={schoolOpts} selected={filterSchool} onChange={v => { setFilterSchool(v); setPage(1); }} />
-          <FilterDropdown label="Rolle" options={roleOpts} selected={filterRole} onChange={v => { setFilterRole(v); setPage(1); }} />
-          <FilterDropdown label="Flags" options={flagOpts} selected={filterFlag} onChange={v => { setFilterFlag(v); setPage(1); }} />
-          <FilterDropdown label="Stufe" options={stufeOpts} selected={filterStufe} onChange={v => { setFilterStufe(v); setPage(1); }} />
-          <Button variant="small" onClick={() => { setSearch(""); setFilterSchool([]); setFilterRole([]); setFilterFlag([]); setFilterStufe([]); }}>Alle Filter zurücksetzen</Button>
-        </div>
+    <div className={styles.page}>
+      <header className={styles.toolbar}>
+        <h2 className={s.title}>Personen</h2>
+        <div className={s.spacer} />
+        {selected.size > 0 && <Button variant="primary" onClick={() => setPwOpen(true)}>Passwort ({selected.size})</Button>}
+        <span className={s.muted}>{data.total} Einträge</span>
       </header>
-      <div className="table-area" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-        <div style={{ flex: 1, overflow: "auto" }}>
-          <DataTable columns={cols} rows={filtered} rowKey="id" selected={selected} onSelect={toggle} onSelectAll={toggleAll} allSelected={allPageSelected} />
-        </div>
-        <div className="pagination-bar pagination-bottom">
-          <label className="page-size">
-            <span className="filter-label">Einträge pro Seite</span>
-            <select className="page-size-select" value={limit} onChange={e => { setLimit(+e.target.value); setPage(1); }}>
-              <option value={25}>25</option><option value={50}>50</option><option value={100}>100</option>
-            </select>
-          </label>
-          <Button variant="small" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Zurück</Button>
-          <span className="page-info">Seite {page} von {totalPages} · {data.total || 0} Einträge</span>
-          <Button variant="small" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Weiter</Button>
-        </div>
+      <div className={styles.toolbar}>
+        <input type="search" className={"search-input " + styles.search} placeholder="role:Lehrer flag:iot school:23045 name:Müller" value={search} onChange={e => setSearch(e.target.value)} />
+        <FilterDropdown label="Schule" options={schoolOpts} selected={filterSchool} onChange={v => { setFilterSchool(v); setPage(1); }} />
+        <FilterDropdown label="Rolle" options={roleOpts} selected={filterRole} onChange={v => { setFilterRole(v); setPage(1); }} />
+        <FilterDropdown label="Flags" options={flagOpts} selected={filterFlag} onChange={v => { setFilterFlag(v); setPage(1); }} />
+        <FilterDropdown label="Stufe" options={stufeOpts} selected={filterStufe} onChange={v => { setFilterStufe(v); setPage(1); }} />
       </div>
-
+      <div className={styles.tableArea}>
+        <DataTable columns={cols} rows={filtered} rowKey="id" selected={selected} onSelect={(id, c) => setSelected(prev => { const n = new Set(prev); c ? n.add(id) : n.delete(id); return n; })} onSelectAll={async (checked) => { if (!checked) { setSelected(new Set()); return; } const all = await api(`/api/persons?limit=9999&${new URLSearchParams({ q: debounced, school: filterSchool.join(","), role: filterRole.join(","), flag: filterFlag.join(",") })}`); setSelected(new Set(asArray(all.persons).map((p: any) => p.id))); }} allSelected={selected.size > 0 && selected.size >= data.total} onSort={(key, dir) => setSort(dir ? { key, dir } : null)} onRowClick={(row) => setOverview(row)} />
+      </div>
+      <div className={s.pagination}>
+        <select className={s.pageSize} value={limit} onChange={e => { setLimit(+e.target.value); setPage(1); }}>
+          {[25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <span className={s.pageInfo}>Seite {page} von {totalPages}</span>
+        <Button variant="small" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Zurück</Button>
+        <Button variant="small" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Weiter</Button>
+      </div>
       {pwOpen && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
-          <div style={{ background: "var(--panel)", padding: 24, borderRadius: "var(--radius)", width: 460, border: "1px solid var(--border)" }}>
-            <h3 style={{ margin: "0 0 12px" }}>Passwörter generieren ({selected.size})</h3>
-            <div style={{ marginBottom: 12 }}>
-              <label className="chip" style={{ cursor: "pointer", marginRight: 6 }} onClick={() => setPwMode("default")}>{pwMode === "default" ? "✓" : "○"} Standardregeln</label>
-              <label className="chip" style={{ cursor: "pointer", marginRight: 6 }} onClick={() => setPwMode("ruleset")}>{pwMode === "ruleset" ? "✓" : "○"} Regeln anwenden</label>
-              <label className="chip" style={{ cursor: "pointer" }} onClick={() => setPwMode("custom")}>{pwMode === "custom" ? "✓" : "○"} Einheitlich</label>
-            </div>
-            {pwMode === "custom" && (
-              <input className="search-input" style={{ width: "100%", marginBottom: 8 }} placeholder="Einheitliches Passwort" value={pwCustom} onChange={e => setPwCustom(e.target.value)} />
-            )}
-            <div className="card" style={{ padding: 10, marginBottom: 12, fontSize: ".82rem", color: "var(--text-muted)" }}>
-              Vorschau: {previewText}<br />
-              {pwForce ? "Überschreibt vorhandene Passwörter" : "Nur leere Passwörter"}
-            </div>
-            <label className="chip" style={{ cursor: "pointer", marginBottom: 12, display: "inline-block" }} onClick={() => setPwForce(f => !f)}>
-              {pwForce ? "✓" : "○"} Vorhandene überschreiben
-            </label>
-            {needStepUp && (
-              <div style={{ marginTop: 8 }}>
-                <input className="search-input" type="password" style={{ width: "100%", marginBottom: 6 }} placeholder="Dein Passwort" value={pwConfirm} onChange={e => setPwConfirm(e.target.value)} />
-                <input className="search-input" style={{ width: "100%", marginBottom: 6 }} placeholder="2FA-Code" value={pwTotp} onChange={e => setPwTotp(e.target.value)} />
-              </div>
-            )}
-            <div style={{ marginTop: 12 }}>
-              <Button variant="primary" onClick={doGenerate} disabled={pwBusy || (needStepUp && (!pwConfirm || !pwTotp))}>{pwBusy ? "…" : "Generieren"}</Button>
-              <Button style={{ marginLeft: 8 }} onClick={() => setPwOpen(false)}>Abbrechen</Button>
-            </div>
+        <div className={s.overlay}><div className={s.modal}>
+          <h3>Passwörter generieren ({selected.size})</h3>
+          <div className={s.mb}>
+            <label className={s.check + (pwMode === "default" ? " " + s.checkOn : "")} onClick={() => setPwMode("default")}>Standardregeln</label>
+            <label className={s.check + (pwMode === "ruleset" ? " " + s.checkOn : "")} onClick={() => setPwMode("ruleset")}>Regeln anwenden</label>
+            <label className={s.check + (pwMode === "custom" ? " " + s.checkOn : "")} onClick={() => setPwMode("custom")}>Einheitlich</label>
           </div>
-        </div>
+          {pwMode === "custom" && <input className={"search-input " + s.field} placeholder="Einheitliches Passwort" value={pwCustom} onChange={e => setPwCustom(e.target.value)} />}
+          <p className={s.muted}>{pwMode === "custom" ? `Einheitlich: ${pwCustom || "(leer)"}` : pwMode === "ruleset" ? "Regeln aus Passwort-Regeln" : "Standardregeln"} · {pwForce ? "Überschreibt vorhandene" : "Nur leere"}</p>
+          <label className={s.check + (pwForce ? " " + s.checkOn : "")} onClick={() => setPwForce(f => !f)}>Vorhandene überschreiben</label>
+          {needStepUp && (
+            <div className={s.mt}>
+              <input className={"search-input " + s.field} type="password" placeholder="Dein Passwort" autoComplete="off" value={pwConfirm} onChange={e => setPwConfirm(e.target.value)} />
+              <input className={"search-input " + s.field} placeholder="2FA-Code" value={pwTotp} onChange={e => setPwTotp(e.target.value)} />
+            </div>
+          )}
+          <div className={s.mt}>
+            <Button variant="primary" onClick={doGenerate} disabled={pwBusy || (needStepUp && (!pwConfirm || !pwTotp))}>{pwBusy ? "…" : "Generieren"}</Button>
+            <Button onClick={() => setPwOpen(false)}>Abbrechen</Button>
+          </div>
+        </div></div>
+      )}
+      {historyId && <HistoryDialog entityType="person" entityId={historyId} onClose={() => setHistoryId(null)} />}
+      {overview && (
+        <div className={s.overlay} onClick={() => setOverview(null)}><div className={s.modal + " " + s.modalWide} onClick={e => e.stopPropagation()}>
+          <h3>{overview.firstName} {overview.name}</h3>
+          <div className={s.grid}>
+            {[["LKID", overview.lkid], ["SID", overview.sid], ["SGID", overview.sgid], ["SOID", overview.soid], ["Schule", overview.schoolName], ["Typ", overview.schoolType], ["Rolle", asArray(overview.roles).join(", ")], ["Klasse", overview.klasse], ["Stufe", overview.stufe], ["Benutzername", overview.username], ["Apple ID", overview.appleId], ["E-Mail", overview.email], ["System-E-Mail", overview.systemEmail], ["Geburt", overview.dateOfBirth], ["Flags", asArray(overview.flags).join(", ")], ["Aktiv", overview.active ? "Ja" : "Nein"]].map(([k, v]) => (
+              <div key={k}><span className={s.muted}>{k}</span><p>{v || "–"}</p></div>
+            ))}
+          </div>
+          <Button onClick={() => setOverview(null)}>Schließen</Button>
+        </div></div>
+      )}
+      {edit && (
+        <div className={s.overlay}><div className={s.modal + " " + s.modalWide}>
+            <h3>Person bearbeiten</h3>
+            {["name", "firstName", "email", "username", "stufe", "klasse"].map(f => (
+              <label key={f}>{f}<input className={"search-input " + s.field} value={edit[f] || ""} onChange={e => setEdit({ ...edit, [f]: e.target.value })} /></label>
+            ))}
+            <div className={s.mt}>
+              <Button variant="primary" onClick={async () => { await api(`/api/persons/${edit.id}`, { method: "PUT", body: JSON.stringify(edit) }); setEdit(null); }}>Speichern</Button>
+              <Button onClick={async () => { await api("/api/passwords/generate", { method: "POST", body: JSON.stringify({ personIds: [edit.id], mode: "default" }) }); }}>Passwort erzeugen</Button>
+              <Button onClick={() => setEdit(null)}>Abbrechen</Button>
+            </div>
+        </div></div>
       )}
     </div>
   );

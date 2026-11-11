@@ -7,24 +7,20 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum AppRole {
-  admin
-  operator
-  viewer
-}
-
 model AppUser {
-  id              String    @id @default(uuid())
-  email           String    @unique
-  passwordHash    String
-  role            AppRole   @default(viewer)
-  totpSecretEnc   String?
-  totpEnabled     Boolean   @default(false)
-  totpVerifiedAt  DateTime?
-  deviceFingerprint String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  refreshTokens   RefreshToken[]
+  id                String    @id @default(uuid())
+  email             String    @unique
+  passwordHash      String
+  salt              String
+  role              String    @default("operator")
+  mustChangePassword Boolean  @default(true)
+  active            Boolean   @default(true)
+  totpSecret     String?
+  totpEnabled       Boolean   @default(false)
+  lastLoginAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  refreshTokens     RefreshToken[]
 }
 
 model RefreshToken {
@@ -32,17 +28,24 @@ model RefreshToken {
   userId    String
   tokenHash String
   expiresAt DateTime
-  revoked   Boolean  @default(false)
   user      AppUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SchoolTypeConfig {
+  prefix    String   @id
+  label     String
+  createdAt DateTime @default(now())
+  schools   School[]
 }
 
 model School {
   id            String   @id @default(uuid())
-  sid           String   @unique // HHST, 5 digits, e.g. 23045
-  sgid          String   // government Schulnummer, e.g. 50267
-  soid          String   // derived last 2 of SID, e.g. 45
+  sid           String   @unique
+  sgid          String
+  soid          String
   name          String
-  schoolType    String   // Grundschule, Regelschule, Gymnasium, ...
+  typeId        String?
+  type          SchoolTypeConfig? @relation(fields: [typeId], references: [prefix])
   config        Json     @default("{}")
   amsLocationId String   @unique @default(uuid())
   createdAt     DateTime @default(now())
@@ -54,9 +57,9 @@ model School {
 model SchoolClass {
   id        String   @id @default(uuid())
   schoolId  String
-  lkid      String   // from groupsextension LKGREIZ_GRID
-  name      String   // SHORT0, e.g. "9b"
-  classKey  String   // sid-name, e.g. "23045-9b"
+  lkid      String
+  name      String
+  classKey  String
   active    Boolean  @default(true)
   school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
@@ -66,9 +69,9 @@ model SchoolClass {
 }
 
 model RoleDefinition {
-  id       String @id @default(uuid())
-  vceType  Int    @unique // 411, 421, 431
-  dataId   String @unique // e.g. "Lehrer", "Schueler"
+  id       String   @id @default(uuid())
+  vceType  Int      @unique
+  dataId   String   @unique
   label    String
   aliases  String[]
   createdAt DateTime @default(now())
@@ -78,9 +81,9 @@ model RoleDefinition {
 
 model FlagDefinition {
   id        String   @id @default(uuid())
-  dataId    String   @unique // mdm, cloud, dvv, print, iot
+  dataId    String   @unique
   label     String
-  requires  String[] // dataIds of required flags
+  requires  String[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   persons   PersonFlag[]
@@ -99,24 +102,22 @@ model GroupFlag {
 
 model Person {
   id              String   @id @default(uuid())
-  lkid            String   @unique // SID-YYYY-NNNNN
+  lkid            String   @unique
   amsId           String   @unique @default(uuid())
-  // Encrypted envelope fields (ciphertext + iv + tag + wrappedDek)
-  nameEnc         String
-  firstNameEnc    String
-  emailEnc        String?
-  workEmailEnc    String?
-  passwordEnc     String?
-  // Plain / indexed
+  name         String
+  firstName    String
+  email        String?
+  workEmail    String?
+  password     String?
   dateOfBirth     DateTime?
   username        String   @unique
   appleId         String?
   systemEmail     String?
   schoolStart     DateTime?
   schoolEnd       DateTime?
-  stufe           String?  // grade from XML STUFE
+  stufe           String?
   active          Boolean  @default(true)
-  sex             String?  // m/w/d
+  sex             String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   schools         PersonSchool[]
@@ -154,7 +155,7 @@ model PersonClass {
   id       String @id @default(uuid())
   personId String
   schoolId String
-  classKey String // e.g. "23045-5a"
+  classKey String
   person   Person @relation(fields: [personId], references: [id], onDelete: Cascade)
   @@unique([personId, classKey])
 }
@@ -163,8 +164,7 @@ model PersonVersion {
   id        String   @id @default(uuid())
   personId  String
   version   Int
-  snapshot  Json     // encrypted snapshot or redacted
-  changedBy String?
+  snapshot  Json
   createdAt DateTime @default(now())
   person    Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
 }
@@ -173,10 +173,8 @@ model ImportJob {
   id        String   @id @default(uuid())
   filename  String
   status    String
-  stats     Json?
-  errors    Json?
+  stats     Json
   createdAt DateTime @default(now())
-  createdBy String?
 }
 
 model PasswordRevealLog {
@@ -185,4 +183,23 @@ model PasswordRevealLog {
   scope     String
   ref       String?
   createdAt DateTime @default(now())
+}
+
+model KeyVersion {
+  version     Int      @id
+  wrappedKey  String
+  wrappedPrev String?
+  createdAt   DateTime @default(now())
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  entityType String
+  entityId   String
+  action     String
+  userId     String?
+  details    Json
+  createdAt  DateTime @default(now())
+  @@index([entityType, entityId])
+  @@index([createdAt])
 }

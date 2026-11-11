@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { api, asArray } from "../lib/api";
+import Button from "../components/Button";
+import s from "../styles/page.module.css";
 
 export default function CsvExport() {
   const [schools, setSchools] = useState<any[]>([]);
@@ -7,19 +9,21 @@ export default function CsvExport() {
   const [klasse, setKlasse] = useState("");
   const [confirm, setConfirm] = useState("");
   const [csv, setCsv] = useState("");
+  const [err, setErr] = useState("");
 
   useEffect(() => {
-    api("/api/schools").then(d => setSchools(asArray(d))).catch(() => setSchools([]));
+    let c = false;
+    api("/api/schools").then(d => { if (!c) setSchools(asArray(d)); }).catch(() => {});
+    return () => { c = true; };
   }, []);
 
   async function exportCsv() {
-    const data = await api("/api/export/csv", {
-      method: "POST",
-      body: JSON.stringify({ schoolId, klasse, includeHeaders: true, confirmPassword: confirm }),
-    });
-    setCsv(data.csv || "");
+    setErr("");
+    try {
+      const data = await api("/api/export/csv", { method: "POST", body: JSON.stringify({ schoolId, klasse, confirmPassword: confirm }) });
+      setCsv(data.csv || "");
+    } catch (e: any) { setErr(e.message); }
   }
-
   function download() {
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");
@@ -29,22 +33,21 @@ export default function CsvExport() {
   }
 
   return (
-    <div className="tab-panel active" style={{ display: "flex" }}>
-      <header className="toolbar">
-        <h2 style={{ margin: 0 }}>CSV-Export</h2>
-      </header>
-      <div style={{ padding: 16 }}>
-        <div className="toolbar-row" style={{ marginBottom: 16 }}>
-          <select className="dd-trigger" value={schoolId} onChange={e => setSchoolId(e.target.value)}>
+    <div className={s.page}>
+      <header className={s.toolbar}><h2 className={s.title}>CSV-Export</h2></header>
+      <div className={s.scroll}>
+        <div className={s.row}>
+          <select className="search-input" value={schoolId} onChange={e => setSchoolId(e.target.value)}>
             <option value="">Schule wählen</option>
-            {schools.map(s => <option key={s.id} value={s.id}>{s.sid} – {s.name}</option>)}
+            {schools.map(sc => <option key={sc.id} value={sc.id}>{sc.sid} – {sc.name}</option>)}
           </select>
-          <input className="search-input" style={{ flex: "0 0 160px" }} placeholder="Klasse (optional)" value={klasse} onChange={e => setKlasse(e.target.value)} />
-          <input className="search-input" type="password" style={{ flex: "0 0 180px" }} placeholder="Dein Passwort" value={confirm} onChange={e => setConfirm(e.target.value)} />
-          <button className="btn primary" onClick={exportCsv}>Exportieren</button>
-          {csv && <button className="btn" onClick={download}>Download</button>}
+          <input autoComplete="off" className="search-input" placeholder="Klasse (optional)" value={klasse} onChange={e => setKlasse(e.target.value)} />
+          <input className="search-input" type="password" placeholder="Dein Passwort" autoComplete="off" value={confirm} onChange={e => setConfirm(e.target.value)} />
+          <Button variant="primary" onClick={exportCsv}>Exportieren</Button>
+          {csv && <Button onClick={download}>Download</Button>}
         </div>
-        {csv && <pre style={{ background: "var(--bg-soft)", padding: 12, maxHeight: 300, overflow: "auto", whiteSpace: "pre", border: "1px solid var(--border)", borderRadius: "var(--radius)" }}>{csv.slice(0, 2000)}</pre>}
+        {err && <p className={s.error}>{err}</p>}
+        {csv && <pre className={s.pre}>{csv.slice(0, 2000)}</pre>}
       </div>
     </div>
   );

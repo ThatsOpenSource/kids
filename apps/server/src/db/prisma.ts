@@ -1,9 +1,15 @@
+import dotenv from "dotenv";
+import path from "path";
 import { PrismaClient } from "@prisma/client";
 
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
+const rootEnv = path.resolve(process.cwd(), "../../.env");
+const localEnv = path.resolve(process.cwd(), ".env");
+dotenv.config({ path: rootEnv });
+dotenv.config({ path: localEnv, override: true });
 
-export const prisma = globalForPrisma.prisma || new PrismaClient({
-  log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
-});
+const url = process.env.DATABASE_URL || "";
+const masked = url.replace(/:([^:@]+)@/, ":***@");
+console.log(`DB: ${masked || "(DATABASE_URL not set)"}`);
+console.log(`  loaded: ${rootEnv} / ${localEnv}`);
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+export const prisma = new PrismaClient();

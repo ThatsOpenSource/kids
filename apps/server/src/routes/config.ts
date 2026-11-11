@@ -1,77 +1,63 @@
 import { Router } from "express";
 import { prisma } from "../db/prisma";
-import { roleSchema, flagSchema } from "../validation/schemas";
-import { asyncHandler } from "../middleware/errorHandler";
-import { logger } from "../services/logger";
+import { log } from "../services/audit";
+import { ok } from "../lib/respond";
 
 const router = Router();
 
-router.get("/roles", asyncHandler(async (_req, res) => {
-  res.json(await prisma.roleDefinition.findMany({ orderBy: { vceType: "asc" } }));
-}));
+router.get("/roles", async (_req, res) => ok(res, await prisma.roleDefinition.findMany({ orderBy: { vceType: "asc" } })));
+router.post("/roles", async (req, res) => {
+  const { vceType, dataId, label, aliases } = req.body;
+  const role = await prisma.roleDefinition.create({ data: { vceType, dataId, label, aliases: aliases || [] } });
+  await log("role", role.id, "create", (req as any).userId, { dataId });
+  ok(res, role, 201);
+});
+router.put("/roles/:id", async (req, res) => {
+  const role = await prisma.roleDefinition.update({ where: { id: req.params.id }, data: req.body });
+  await log("role", role.id, "update", (req as any).userId, req.body);
+  ok(res, role);
+});
 
-router.post("/roles", asyncHandler(async (req, res) => {
-  const p = roleSchema.safeParse(req.body);
-  if (!p.success) return res.status(400).json({ error: "Validierung fehlgeschlagen", details: p.error.issues });
-  const role = await prisma.roleDefinition.create({ data: p.data });
-  logger.audit("Role created", { dataId: role.dataId, vceType: role.vceType });
-  res.status(201).json(role);
-}));
+router.get("/flags", async (_req, res) => ok(res, await prisma.flagDefinition.findMany()));
+router.post("/flags", async (req, res) => {
+  const { dataId, label, requires } = req.body;
+  const flag = await prisma.flagDefinition.create({ data: { dataId, label, requires: requires || [] } });
+  await log("flag", flag.id, "create", (req as any).userId, { dataId });
+  ok(res, flag, 201);
+});
+router.put("/flags/:id", async (req, res) => {
+  const flag = await prisma.flagDefinition.update({ where: { id: req.params.id }, data: req.body });
+  await log("flag", flag.id, "update", (req as any).userId, req.body);
+  ok(res, flag);
+});
 
-router.put("/roles/:id", asyncHandler(async (req, res) => {
-  const p = roleSchema.partial().safeParse(req.body);
-  if (!p.success) return res.status(400).json({ error: "Validierung fehlgeschlagen", details: p.error.issues });
-  const role = await prisma.roleDefinition.update({ where: { id: req.params.id }, data: p.data });
-  logger.audit("Role updated", { id: role.id });
-  res.json(role);
-}));
-
-router.get("/flags", asyncHandler(async (_req, res) => {
-  res.json(await prisma.flagDefinition.findMany());
-}));
-
-router.post("/flags", asyncHandler(async (req, res) => {
-  const p = flagSchema.safeParse(req.body);
-  if (!p.success) return res.status(400).json({ error: "Validierung fehlgeschlagen", details: p.error.issues });
-  const flag = await prisma.flagDefinition.create({ data: p.data });
-  logger.audit("Flag created", { dataId: flag.dataId });
-  res.status(201).json(flag);
-}));
-
-router.put("/flags/:id", asyncHandler(async (req, res) => {
-  const p = flagSchema.partial().safeParse(req.body);
-  if (!p.success) return res.status(400).json({ error: "Validierung fehlgeschlagen", details: p.error.issues });
-  const flag = await prisma.flagDefinition.update({ where: { id: req.params.id }, data: p.data });
-  logger.audit("Flag updated", { id: flag.id });
-  res.json(flag);
-}));
-
-router.get("/group-flags", asyncHandler(async (_req, res) => {
+router.get("/group-flags", async (_req, res) => {
   const groups = await prisma.groupFlag.findMany({ include: { flag: true } });
-  const roles = await prisma.roleDefinition.findMany();
-  const schools = await prisma.school.findMany();
-  res.json(groups.map(g => ({
-    id: g.id,
-    flagId: g.flagId,
-    flag: g.flag.dataId,
-    roleId: g.roleId,
-    role: roles.find(r => r.id === g.roleId)?.label || null,
-    schoolId: g.schoolId,
-    school: schools.find(s => s.id === g.schoolId)?.name || null,
-  })));
-}));
-
-router.post("/group-flags", asyncHandler(async (req, res) => {
-  const { flagId, roleId, schoolId } = req.body;
-  if (!flagId) return res.status(400).json({ error: "flagId erforderlich" });
-  const gf = await prisma.groupFlag.create({ data: { flagId, roleId: roleId || null, schoolId: schoolId || null } });
-  logger.audit("Group flag created", { flagId, roleId, schoolId });
-  res.status(201).json(gf);
-}));
-
-router.delete("/group-flags/:id", asyncHandler(async (req, res) => {
+  ok(res, groups);
+});
+router.post("/group-flags", async (req, res) => {
+  const gf = await prisma.groupFlag.create({ data: req.body });
+  await log("groupFlag", gf.id, "create", (req as any).userId, req.body);
+  ok(res, gf, 201);
+});
+router.delete("/group-flags/:id", async (req, res) => {
   await prisma.groupFlag.delete({ where: { id: req.params.id } });
-  res.json({ ok: true });
-}));
+  ok(res, { ok: true });
+});
+
+router.get("/rules", async (_req, res) => {
+  const row = await prisma.school.findFirst({ where: { sid: "__rules__" } });
+  ok(res, row?.config || { words: null, overrides: [] });
+});
+
+router.put("/rules", async (req, res) => {
+  const { words, overrides } = req.body;
+  await prisma.school.upsert({
+    where: { sid: "__rules__" },
+    update: { config: { words, overrides } },
+    create: { sid: "__rules__", sgid: "0", soid: "0", name: "Regeln", schoolType: "System", config: { words, overrides } },
+  });
+  ok(res, { ok: true });
+});
 
 export default router;

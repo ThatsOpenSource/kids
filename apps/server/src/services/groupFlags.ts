@@ -1,32 +1,15 @@
 import { prisma } from "../db/prisma";
 
-export async function groupFlagsFor(person: {
-  roles: { roleId: string }[];
-  schools: { schoolId: string }[];
-}): Promise<string[]> {
-  const roleIds = person.roles.map(r => r.roleId);
-  const schoolIds = person.schools.map(s => s.schoolId);
-  if (!roleIds.length && !schoolIds.length) return [];
-
-  const groups = await prisma.groupFlag.findMany({
-    where: {
-      OR: [
-        { roleId: { in: roleIds }, schoolId: null },
-        { schoolId: { in: schoolIds }, roleId: null },
-        { roleId: { in: roleIds }, schoolId: { in: schoolIds } },
-      ],
-    },
-    include: { flag: true },
-  });
-  return [...new Set(groups.map(g => g.flag.dataId))];
-}
-
-export async function mergeFlags(person: {
-  flags: { flag: { dataId: string } }[];
-  roles: { roleId: string }[];
-  schools: { schoolId: string }[];
-}): Promise<string[]> {
-  const direct = person.flags.map(f => f.flag.dataId);
-  const group = await groupFlagsFor(person);
-  return [...new Set([...direct, ...group])];
+export async function mergeFlags(person: { id: string; roles: { roleId: string }[]; schools: { schoolId: string }[]; flags: { flag: { dataId: string; label: string } }[] }) {
+  const own = person.flags.map(f => f.flag.dataId);
+  const groups = await prisma.groupFlag.findMany({ include: { flag: true } });
+  const roleIds = new Set(person.roles.map(r => r.roleId));
+  const schoolIds = new Set(person.schools.map(s => s.schoolId));
+  const extra: string[] = [];
+  for (const g of groups) {
+    const roleMatch = !g.roleId || roleIds.has(g.roleId);
+    const schoolMatch = !g.schoolId || schoolIds.has(g.schoolId);
+    if (roleMatch && schoolMatch && !own.includes(g.flag.dataId)) extra.push(g.flag.dataId);
+  }
+  return [...own, ...extra];
 }

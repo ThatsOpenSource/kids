@@ -3,14 +3,8 @@
   "private": true,
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
-    "dev:client": "bun run --cwd apps/client dev",
-    "dev:server": "bun run --cwd apps/server dev",
-    "build": "bun run --cwd apps/client build && bun run --cwd apps/server build",
-    "db:generate": "bunx --cwd apps/server prisma generate",
-    "db:push": "bunx --cwd apps/server prisma db push",
-    "db:seed": "bun run --cwd apps/server src/scripts/seedAdmin.ts && bun run --cwd apps/server src/scripts/seedSchools.ts"
-  },
-  "devDependencies": {
-    "typescript": "^5.6.0"
+    "dev": "bun run --filter @kids/server dev & bun run --filter @kids/client dev",
+    "dev:server": "bun run --filter @kids/server dev",
+    "dev:client": "bun run --filter @kids/client dev"
   }
 }

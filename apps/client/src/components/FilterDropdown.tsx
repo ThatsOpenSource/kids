@@ -1,37 +1,23 @@
 import { useState, useRef, useEffect } from "react";
 
 interface Option { value: string; label: string; }
-
-interface Props {
-  label: string;
-  options: Option[];
-  selected: string[];
-  onChange: (v: string[]) => void;
-}
+interface Props { label: string; options: Option[]; selected: string[]; onChange: (v: string[]) => void; }
 
 export default function FilterDropdown({ label, options, selected, onChange }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
-    function close(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
+    function close(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, []);
-
-  const display = selected.length === 0 ? "Alle" : selected.length === 1
-    ? (options.find(o => o.value === selected[0])?.label || selected[0])
-    : `${selected.length} gewählt`;
-
+  const display = selected.length === 0 ? "Alle" : selected.length === 1 ? options.find(o => o.value === selected[0])?.label || selected[0] : `${selected.length} gewählt`;
   function toggle(v: string) {
     onChange(selected.includes(v) ? selected.filter(x => x !== v) : [...selected, v]);
   }
-
   return (
     <div className={"dd" + (open ? " open" : "")} ref={ref}>
-      <button type="button" className="dd-trigger" onClick={() => setOpen(o => !o)}>
+      <button type="button" className="dd-trigger" onClick={() => setOpen(!open)}>
         <span className="dd-label">{label}</span>
         <span className="dd-value">{display}</span>
         <span className="dd-caret" />
@@ -40,7 +26,7 @@ export default function FilterDropdown({ label, options, selected, onChange }: P
         <div className="dd-panel">
           <div className="dd-panel-head">
             <span>{label}</span>
-            <button type="button" className="dd-clear" onClick={() => onChange([])}>Alle abwählen</button>
+            {selected.length > 0 && <button className="dd-clear" onClick={() => onChange([])}>Zurücksetzen</button>}
           </div>
           <div className="dd-options">
             {options.map(o => (

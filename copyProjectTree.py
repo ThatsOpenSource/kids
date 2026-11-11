@@ -7,7 +7,7 @@ import fnmatch
 EXTENSIONS = {".ts", ".tsx", ".json", ".css", ".html", ".js", ".jsx", ".mjs", ".cjs", ".sql", ".prisma", ".env"}
 
 # Directories to skip inside each workspace
-SKIP_DIRS = {".git", "node_modules", "vendor", "dist", "build", "__pycache__", "coverage", ".next", "out", ".turbo", "dumps", "services"}
+SKIP_DIRS = {".git", "node_modules", "vendor", "dist", "build", "__pycache__", "coverage", ".next", "out", ".turbo", "dumps"}
 
 # Files to skip (exact name)
 SKIP_FILES = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "tsconfig.tsbuildinfo"}

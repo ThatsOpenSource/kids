@@ -1,0 +1,25 @@
+import { Column } from "../components/DataTable";
+
+export const PERSON_COLUMNS: Column[] = [
+  { key: "sid", label: "SID" },
+  { key: "sgid", label: "SGID" },
+  { key: "soid", label: "SOID" },
+  { key: "schoolName", label: "Schulname" },
+  { key: "schoolType", label: "Schultyp" },
+  { key: "klasse", label: "Klasse" },
+  { key: "stufe", label: "Stufe" },
+  { key: "lkid", label: "LKID" },
+  { key: "name", label: "Name" },
+  { key: "firstName", label: "Vorname" },
+  { key: "dateOfBirth", label: "Geburt" },
+  { key: "username", label: "Benutzername" },
+  { key: "appleId", label: "Apple ID" },
+  { key: "email", label: "persön. E-Mail" },
+  { key: "systemEmail", label: "System-E-Mail" },
+  { key: "roles", label: "Rolle" },
+  { key: "flags", label: "Flags" },
+  { key: "active", label: "aktiv" },
+  { key: "terminated", label: "terminiert" },
+  { key: "createdAt", label: "Erstellt" },
+  { key: "updatedAt", label: "Geändert" },
+];

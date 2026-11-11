@@ -1,96 +1,91 @@
 import { Router } from "express";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
+import { authenticator } from "otplib";
+import QRCode from "qrcode";
 import { prisma } from "../db/prisma";
-import { loginSchema } from "../validation/schemas";
-import * as authService from "../services/authService";
+import * as auth from "../services/authService";
+import { log } from "../services/audit";
+import { requireAuth } from "../middleware/auth";
+import { ok, fail } from "../lib/respond";
+import { encryptField, decryptField } from "../encryption/envelope";
 
 const router = Router();
 
-router.post("/register", async (req, res) => {
-  try {
-    const { email, password, role } = req.body;
-    const user = await authService.registerUser(email, password, role);
-    res.status(201).json({ id: user.id, email: user.email, role: user.role });
-  } catch (e: any) {
-    res.status(400).json({ error: e.message });
-  }
-});
-
 router.post("/login", async (req, res) => {
-  const parsed = loginSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: "Validierung fehlgeschlagen", details: parsed.error.issues });
-
   try {
-    const fingerprint = req.headers["x-device-fingerprint"] as string || "";
-    const user = await authService.loginUser(parsed.data.email, parsed.data.password, fingerprint);
-
-    if (user.totpEnabled) {
-      const pre = jwt.sign({ sub: user.id, purpose: "preauth" }, process.env.JWT_ACCESS_SECRET!, { expiresIn: "5m" });
-      return res.json({ requiresTotp: true, preAuthToken: pre });
-    }
-
-    const access = authService.signAccess(user.id, user.role, fingerprint);
-    const refresh = authService.signRefresh(user.id);
-    await authService.storeRefresh(user.id, refresh);
-    res.json({ accessToken: access, refreshToken: refresh, user: { id: user.id, email: user.email, role: user.role, totpEnabled: user.totpEnabled } });
+    const user = await auth.loginUser(req.body.email, req.body.password);
+    const access = auth.signAccess(user.id, user.role);
+    const refresh = auth.signRefresh(user.id);
+    await auth.storeRefresh(user.id, refresh);
+    await log("user", user.id, "login", user.id, {});
+    ok(res, {
+      accessToken: access,
+      refreshToken: refresh,
+      user: { id: user.id, email: user.email, role: user.role, mustChangePassword: user.mustChangePassword, totpEnabled: user.totpEnabled },
+    });
   } catch (e: any) {
-    res.status(401).json({ error: e.message });
+    fail(res, 401, e.message, { code: e.code || "auth_failed", path: "/api/auth/login" });
   }
 });
 
 router.post("/refresh", async (req, res) => {
   const { refreshToken } = req.body;
-  if (!refreshToken) return res.status(400).json({ error: "refreshToken fehlt" });
+  if (!refreshToken) return fail(res, 400, "refreshToken fehlt");
   try {
-    const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET!) as any;
+    const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || "dev-refresh") as any;
     const tokens = await prisma.refreshToken.findMany({ where: { userId: payload.sub } });
     let match = null;
     for (const t of tokens) {
       if (await bcrypt.compare(refreshToken, t.tokenHash)) { match = t; break; }
     }
-    if (!match) return res.status(401).json({ error: "Refresh ungültig" });
+    if (!match) return fail(res, 401, "Refresh ungültig", { code: "refresh_invalid" });
     const user = await prisma.appUser.findUnique({ where: { id: payload.sub } });
-    if (!user) return res.status(401).json({ error: "Benutzer nicht gefunden" });
-    const access = authService.signAccess(user.id, user.role);
-    const next = authService.signRefresh(user.id);
+    if (!user || !user.active) return fail(res, 401, "Benutzer nicht gefunden", { code: "user_not_found" });
+    const access = auth.signAccess(user.id, user.role);
+    const next = auth.signRefresh(user.id);
     await prisma.refreshToken.delete({ where: { id: match.id } });
-    await authService.storeRefresh(user.id, next);
-    res.json({ accessToken: access, refreshToken: next });
+    await auth.storeRefresh(user.id, next);
+    ok(res, { accessToken: access, refreshToken: next });
   } catch {
-    res.status(401).json({ error: "Refresh abgelaufen" });
+    fail(res, 401, "Refresh abgelaufen", { code: "refresh_expired" });
   }
 });
 
-router.post("/login/totp", async (req, res) => {
-  const { preAuthToken, totpCode } = req.body;
-  try {
-    const payload = jwt.verify(preAuthToken, process.env.JWT_ACCESS_SECRET!) as any;
-    if (payload.purpose !== "preauth") throw new Error();
-    await authService.verifyTotp(payload.sub, totpCode);
-    const user = await import("../db/prisma").then(m => m.prisma.appUser.findUnique({ where: { id: payload.sub } }));
-    if (!user) throw new Error();
-    const access = authService.signAccess(user.id, user.role);
-    res.json({ accessToken: access, user: { id: user.id, email: user.email, role: user.role, totpEnabled: true } });
-  } catch (e: any) {
-    res.status(401).json({ error: e.message || "Token ungültig" });
-  }
+router.post("/change-password", async (req, res) => {
+  const { userId, newPassword } = req.body;
+  if (!userId || !newPassword) return fail(res, 400, "userId und newPassword erforderlich");
+  await auth.changePassword(userId, newPassword);
+  await log("user", userId, "password-change", userId, {});
+  ok(res, { ok: true });
 });
 
-router.post("/2fa/setup", async (req, res) => {
-  const { email } = req.body;
-  const result = await authService.setupTotp(email || "admin@kids.local");
-  res.json(result);
+router.get("/2fa/status", requireAuth, async (req, res) => {
+  const userId = (req as any).userId;
+  if (!userId) return fail(res, 401, "Nicht angemeldet");
+  const user = await prisma.appUser.findUnique({ where: { id: userId } });
+  ok(res, { enabled: user?.totpEnabled || false });
 });
 
-router.post("/2fa/confirm", async (req, res) => {
-  try {
-    const { userId, secret, totpCode } = req.body;
-    await authService.confirmTotp(userId, secret, totpCode);
-    res.json({ ok: true });
-  } catch (e: any) {
-    res.status(400).json({ error: e.message });
-  }
+router.post("/2fa/setup", requireAuth, async (req, res) => {
+  const user = await prisma.appUser.findUnique({ where: { id: (req as any).userId } });
+  if (!user) return fail(res, 401, "Nicht angemeldet");
+  const secret = authenticator.generateSecret();
+  const otpauth = authenticator.keyuri(user.email, "KIDS", secret);
+  const qr = await QRCode.toDataURL(otpauth);
+  await prisma.appUser.update({ where: { id: user.id }, data: { totpSecret: await encryptField(secret) } });
+  ok(res, { qr, secret });
+});
+
+router.post("/2fa/confirm", requireAuth, async (req, res) => {
+  const { code } = req.body;
+  const user = await prisma.appUser.findUnique({ where: { id: (req as any).userId } });
+  if (!user?.totpSecret) return fail(res, 400, "Kein Setup gestartet");
+  const secret = await decryptField(user.totpSecret);
+  if (!secret || !authenticator.check(code, secret)) return fail(res, 401, "Code ungültig");
+  await prisma.appUser.update({ where: { id: user.id }, data: { totpEnabled: true } });
+  await log("user", user.id, "2fa-enabled", user.id, {});
+  ok(res, { ok: true });
 });
 
 export default router;

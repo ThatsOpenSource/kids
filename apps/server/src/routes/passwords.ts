@@ -1,91 +1,46 @@
 import { Router } from "express";
 import { prisma } from "../db/prisma";
-import { encryptField, decryptField } from "../encryption/envelope";
-import { pickChildWord, genPupilAlnum, genStaff } from "../services/passwords";
+import { encryptField } from "../encryption/envelope";
+import { log } from "../services/audit";
+import { ok } from "../lib/respond";
 
 const router = Router();
 
-function generatePassword(policy: any = {}): string {
-  const length = policy.length || 12;
-  const upper = policy.upper !== false;
-  const lower = policy.lower !== false;
-  const digits = policy.digits !== false;
-  const special = policy.special === true;
-  const words = policy.words || [];
-  const wordCount = policy.wordCount || 0;
+const CHILD_WORDS = ["Apfel","Banane","Birne","Kirsche","Sonne","Mond","Hund","Katze","Baum","Blume","Haus","Auto","Ball","Buch","Herz"];
 
-  if (wordCount > 0 && words.length) {
-    const picked = Array.from({ length: wordCount }, () => words[Math.floor(Math.random() * words.length)]);
-    return picked.join("-") + Math.floor(Math.random() * 90 + 10);
-  }
-
-  let chars = "";
-  if (lower) chars += "abcdefghijklmnopqrstuvwxyz";
-  if (upper) chars += "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  if (digits) chars += "0123456789";
-  if (special) chars += "!@#$%&*";
-  if (!chars) chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-
-  let pw = "";
-  for (let i = 0; i < length; i++) pw += chars[Math.floor(Math.random() * chars.length)];
-  return pw;
+function genPupil(): string {
+  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let s = "";
+  for (let i = 0; i < 7; i++) s += i === 3 ? (Math.random() > 0.5 ? "?" : "!") : chars[Math.floor(Math.random() * chars.length)];
+  return s;
+}
+function genStaff(): string {
+  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#!?_-";
+  let s = "";
+  for (let i = 0; i < 9; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return s;
 }
 
 router.post("/generate", async (req, res) => {
-  const { scope, ref, refs, schoolId, force, confirmPassword } = req.body;
-  if (!confirmPassword) return res.status(400).json({ error: "confirmPassword erforderlich (Step-up)" });
-
-  const where: any = {};
-  if (scope === "school" && schoolId) where.schools = { some: { schoolId } };
-  if (scope === "class" && ref) where.classes = { some: { classKey: { contains: ref } } };
-  if (scope === "person" && ref) where.lkid = ref;
-  if (scope === "person" && Array.isArray(refs) && refs.length) where.id = { in: refs };
-  if (scope === "role" && ref) where.roles = { some: { role: { dataId: ref } } };
-
-  const persons = await prisma.person.findMany({
-    where,
-    take: 500,
-    include: { roles: { include: { role: true } }, schools: { include: { school: true } }, classes: true },
-  });
+  const { refs, force, mode, customPassword } = req.body;
+  const where: any = refs?.length ? { id: { in: refs } } : {};
+  const persons = await prisma.person.findMany({ where, take: 500, include: { roles: { include: { role: true } }, schools: { include: { school: true } } } });
   let generated = 0;
-  const results: any[] = [];
-
   const usedWords = new Set<string>();
   for (const p of persons) {
-    if (p.passwordEnc && !force) continue;
-    const isPupil = p.roles?.some((r: any) => r.role?.dataId === "Schueler");
-    const isGrund = p.schools?.[0]?.school?.schoolType === "Grundschule";
+    if (p.password && !force) continue;
+    const isPupil = p.roles.some(r => r.role.dataId === "Schueler");
+    const isGrund = p.schools[0]?.school?.schoolType === "Grundschule";
     let pw: string;
-    if (isPupil && isGrund) pw = pickChildWord(usedWords);
-    else if (isPupil) pw = genPupilAlnum();
+    if (mode === "custom" && customPassword) pw = customPassword;
+    else if (isPupil && isGrund) { pw = CHILD_WORDS[Math.floor(Math.random() * CHILD_WORDS.length)]; usedWords.add(pw); }
+    else if (isPupil) pw = genPupil();
     else pw = genStaff();
-    if (isPupil && isGrund) usedWords.add(pw.toLowerCase());
-    await prisma.person.update({ where: { id: p.id }, data: { passwordEnc: encryptField(pw) } });
-    results.push({ lkid: p.lkid, username: p.username, password: pw });
+    await prisma.person.update({ where: { id: p.id }, data: { password: await encryptField(pw) } });
+    await log("person", p.id, "password-generate", (req as any).userId, { mode });
     generated++;
   }
-
-  await prisma.passwordRevealLog.create({ data: { userId: "system", scope, ref: ref || (refs ? refs.join(",") : null) } });
-  res.json({ generated, results });
-});
-
-router.post("/reveal", async (req, res) => {
-  const { scope, ref, schoolId, confirmPassword } = req.body;
-  if (!confirmPassword) return res.status(400).json({ error: "confirmPassword erforderlich" });
-
-  const where: any = {};
-  if (scope === "person" && ref) where.lkid = ref;
-  else if (scope === "school" && schoolId) where.schools = { some: { schoolId } };
-
-  const persons = await prisma.person.findMany({ where, take: 100 });
-  const revealed = persons.map(p => ({
-    lkid: p.lkid,
-    username: p.username,
-    password: decryptField(p.passwordEnc) || "(nicht gesetzt)",
-  }));
-
-  await prisma.passwordRevealLog.create({ data: { userId: "system", scope, ref: ref || null } });
-  res.json({ revealed });
+  ok(res, { generated });
 });
 
 export default router;

@@ -1,35 +1,15 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-import { prisma } from "../db/prisma";
 
-export interface AuthRequest extends Request {
-  user?: { id: string; role: string; email?: string };
-}
-
-export async function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
-  const header = req.headers.authorization;
-  if (!header?.startsWith("Bearer ")) return res.status(401).json({ error: "Nicht authentifiziert" });
+export function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const h = req.headers.authorization;
+  if (!h?.startsWith("Bearer ")) return res.status(401).json({ error: "Nicht angemeldet" });
   try {
-    const payload = jwt.verify(header.slice(7), process.env.JWT_ACCESS_SECRET!) as any;
-    const user = await prisma.appUser.findUnique({ where: { id: payload.sub } });
-    if (!user) return res.status(401).json({ error: "Benutzer nicht gefunden" });
-    const fp = req.headers["x-device-fingerprint"] as string || "";
-    if (user.deviceFingerprint && fp && user.deviceFingerprint !== fp) {
-      // soft warning only in development
-      if (process.env.NODE_ENV === "production") {
-        return res.status(403).json({ error: "Geräte-Fingerprint ungültig" });
-      }
-    }
-    req.user = { id: user.id, role: user.role, email: user.email };
+    const payload = jwt.verify(h.slice(7), process.env.JWT_ACCESS_SECRET || "dev-access") as any;
+    (req as any).userId = payload.sub;
+    (req as any).role = payload.role;
     next();
   } catch {
-    res.status(401).json({ error: "Token ungültig oder abgelaufen" });
+    res.status(401).json({ error: "Token ungültig" });
   }
-}
-
-export function requireRole(...roles: string[]) {
-  return (req: AuthRequest, res: Response, next: NextFunction) => {
-    if (!req.user || !roles.includes(req.user.role)) return res.status(403).json({ error: "Keine Berechtigung" });
-    next();
-  };
 }

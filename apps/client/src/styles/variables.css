@@ -1,7 +1,6 @@
 :root {
   --bg: #ffffff;
   --bg-soft: #f6f6f6;
-  --bg-soft-2: #ececec;
   --panel: #ffffff;
   --border: #d9d9d9;
   --border-strong: #b3b3b3;
@@ -9,17 +8,57 @@
   --text-muted: #6b6b6b;
   --text-faint: #9a9a9a;
   --primary: #111111;
-  --primary-hover: #333333;
   --radius: 4px;
   --sidebar-w: 220px;
-  --font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --mono: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, monospace;
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 24px;
-  --space-6: 32px;
-  --max-form: 480px;
-  --max-card: 640px;
 }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; font-size: 14px; color: var(--text); background: var(--bg); }
+.search-input { border: 1px solid var(--border-strong); background: var(--bg); color: var(--text); padding: 7px 12px; border-radius: var(--radius); font-size: .85rem; font-family: inherit; }
+.search-input:focus { outline: 2px solid var(--text); outline-offset: -2px; }
+
+.dd { position: relative; display: flex; flex-direction: column; gap: 4px; }
+.dd-trigger {
+  display: inline-flex; align-items: center; gap: 8px;
+  min-width: 160px; max-width: 260px;
+  padding: 6px 10px; border: 1px solid var(--border-strong);
+  background: var(--bg); color: var(--text);
+  border-radius: var(--radius); font-size: .85rem; font-family: inherit;
+  cursor: pointer; text-align: left;
+}
+.dd-trigger:hover { background: var(--bg-soft); }
+.dd.open .dd-trigger { border-color: var(--text); }
+.dd-label {
+  font-size: .68rem; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text-faint); padding-right: 6px; border-right: 1px solid var(--border);
+}
+.dd-value { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.dd-caret {
+  width: 0; height: 0;
+  border-left: 4px solid transparent; border-right: 4px solid transparent;
+  border-top: 5px solid var(--text); margin-left: 4px;
+}
+.dd.open .dd-caret { transform: rotate(180deg); }
+.dd-panel {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 50;
+  min-width: 220px; max-width: 320px; max-height: 280px; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--border-strong);
+  border-radius: var(--radius); box-shadow: 0 6px 20px rgba(0, 0, 0, .08);
+  padding: 6px 0;
+}
+.dd-panel-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 4px 10px 8px; border-bottom: 1px solid var(--border); margin-bottom: 4px;
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text-faint);
+}
+.dd-clear {
+  background: transparent; border: 0; color: var(--text-muted); font: inherit;
+  font-size: .7rem; text-transform: none; letter-spacing: 0; cursor: pointer;
+  text-decoration: underline; padding: 0;
+}
+.dd-clear:hover { color: var(--text); }
+.dd-option {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 12px; font-size: .84rem; cursor: pointer; user-select: none;
+}
+.dd-option:hover { background: var(--bg-soft); }

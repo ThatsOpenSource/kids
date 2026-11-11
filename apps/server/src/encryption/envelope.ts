@@ -1,78 +1,97 @@
 import crypto from "crypto";
+import { prisma } from "../db/prisma";
 
-const MASTER_KEY = Buffer.from(process.env.ENCRYPTION_MASTER_KEY || "", "hex");
-if (MASTER_KEY.length !== 32) {
-  console.warn("ENCRYPTION_MASTER_KEY must be 32 bytes hex. Using fallback for dev only.");
+const MASTER = process.env.MASTER_KEY || "dev-master-key-32-bytes-long!!";
+const ROTATION_DAYS = 120;
+
+function masterKek(): Buffer {
+  return crypto.createHash("sha256").update(MASTER).digest();
 }
 
-export interface Envelope {
-  ciphertext: string; // base64
-  iv: string;         // base64
-  authTag: string;    // base64
-  wrappedDek: string; // base64 (DEK encrypted with master)
-  version: number;
+function wrap(key: Buffer, withKey: Buffer): string {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", withKey, iv);
+  const enc = Buffer.concat([cipher.update(key), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, tag, enc]).toString("base64");
 }
 
-function getMaster(): Buffer {
-  if (MASTER_KEY.length === 32) return MASTER_KEY;
-  return crypto.createHash("sha256").update("dev-fallback-key").digest();
+function unwrap(wrapped: string, withKey: Buffer): Buffer {
+  const buf = Buffer.from(wrapped, "base64");
+  const iv = buf.subarray(0, 12);
+  const tag = buf.subarray(12, 28);
+  const data = buf.subarray(28);
+  const decipher = crypto.createDecipheriv("aes-256-gcm", withKey, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(data), decipher.final()]);
 }
 
-export function encryptEnvelope(plaintext: string, version = 1): Envelope {
+async function loadKeys(): Promise<Map<number, Buffer>> {
+  const rows = await prisma.keyVersion.findMany({ orderBy: { version: "asc" } });
+  const keys = new Map<number, Buffer>();
+  for (const row of rows) {
+    keys.set(row.version, unwrap(row.wrappedKey, masterKek()));
+  }
+  return keys;
+}
+
+async function ensureVersion(): Promise<{ version: number; kek: Buffer }> {
+  const latest = await prisma.keyVersion.findFirst({ orderBy: { version: "desc" } });
+  if (!latest) {
+    const kek = crypto.randomBytes(32);
+    await prisma.keyVersion.create({ data: { version: 1, wrappedKey: wrap(kek, masterKek()) } });
+    return { version: 1, kek };
+  }
+  const age = (Date.now() - latest.createdAt.getTime()) / 864e5;
+  const currentKek = unwrap(latest.wrappedKey, masterKek());
+  if (age < ROTATION_DAYS) return { version: latest.version, kek: currentKek };
+  const newKek = crypto.randomBytes(32);
+  const next = latest.version + 1;
+  await prisma.keyVersion.create({
+    data: { version: next, wrappedKey: wrap(newKek, masterKek()), wrappedPrev: wrap(currentKek, newKek) },
+  });
+  console.log(`Key rotated to v${next}`);
+  return { version: next, kek: newKek };
+}
+
+export async function encryptField(plain: string | null | undefined): Promise<string | null> {
+  if (!plain) return null;
+  const { version, kek } = await ensureVersion();
   const dek = crypto.randomBytes(32);
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv("aes-256-gcm", dek, iv);
-  const ct = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-  const authTag = cipher.getAuthTag();
-
-  // wrap DEK with master
-  const wrapIv = crypto.randomBytes(12);
-  const wrapCipher = crypto.createCipheriv("aes-256-gcm", getMaster(), wrapIv);
-  const wrapped = Buffer.concat([wrapCipher.update(dek), wrapCipher.final()]);
-  const wrapTag = wrapCipher.getAuthTag();
-  const wrappedDek = Buffer.concat([wrapIv, wrapTag, wrapped]).toString("base64");
-
-  return {
-    ciphertext: ct.toString("base64"),
-    iv: iv.toString("base64"),
-    authTag: authTag.toString("base64"),
-    wrappedDek,
-    version,
-  };
+  const enc = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  const payload = Buffer.concat([iv, tag, enc]).toString("base64");
+  return `v${version}:${wrap(dek, kek)}:${payload}`;
 }
 
-export function decryptEnvelope(env: Envelope): string {
-  const wrappedBuf = Buffer.from(env.wrappedDek, "base64");
-  const wrapIv = wrappedBuf.subarray(0, 12);
-  const wrapTag = wrappedBuf.subarray(12, 28);
-  const wrappedCt = wrappedBuf.subarray(28);
-  const unwrap = crypto.createDecipheriv("aes-256-gcm", getMaster(), wrapIv);
-  unwrap.setAuthTag(wrapTag);
-  const dek = Buffer.concat([unwrap.update(wrappedCt), unwrap.final()]);
-
-  const decipher = crypto.createDecipheriv("aes-256-gcm", dek, Buffer.from(env.iv, "base64"));
-  decipher.setAuthTag(Buffer.from(env.authTag, "base64"));
-  const pt = Buffer.concat([decipher.update(Buffer.from(env.ciphertext, "base64")), decipher.final()]);
-  return pt.toString("utf8");
-}
-
-export function serializeEnvelope(env: Envelope): string {
-  return JSON.stringify(env);
-}
-
-export function parseEnvelope(s: string): Envelope {
-  return JSON.parse(s);
-}
-
-export function encryptField(plaintext: string | null | undefined): string | null {
-  if (!plaintext) return null;
-  return serializeEnvelope(encryptEnvelope(plaintext));
-}
-
-export function decryptField(stored: string | null | undefined): string | null {
-  if (!stored) return null;
+export async function decryptField(enc: string | null | undefined): Promise<string | null> {
+  if (!enc) return null;
   try {
-    return decryptEnvelope(parseEnvelope(stored));
+    const keys = await loadKeys();
+    if (!enc.startsWith("v")) {
+      const kek = keys.get(1);
+      if (!kek) return null;
+      const buf = Buffer.from(enc, "base64");
+      const iv = buf.subarray(0, 12);
+      const tag = buf.subarray(12, 28);
+      const data = buf.subarray(28);
+      const decipher = crypto.createDecipheriv("aes-256-gcm", kek, iv);
+      decipher.setAuthTag(tag);
+      return Buffer.concat([decipher.update(data), decipher.final()]).toString("utf8");
+    }
+    const [ver, wrapped, payload] = enc.split(":");
+    const kek = keys.get(parseInt(ver.slice(1)));
+    if (!kek) return null;
+    const dek = unwrap(wrapped, kek);
+    const buf = Buffer.from(payload, "base64");
+    const iv = buf.subarray(0, 12);
+    const tag = buf.subarray(12, 28);
+    const data = buf.subarray(28);
+    const decipher = crypto.createDecipheriv("aes-256-gcm", dek, iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(data), decipher.final()]).toString("utf8");
   } catch {
     return null;
   }
