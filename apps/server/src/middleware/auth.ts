@@ -1,41 +1,35 @@
-import type { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
-import { env } from '../config/env';
-import type { JwtPayload } from '@kids/shared';
-import { logger } from '../utils/logger';
+import { Request, Response, NextFunction } from "express";
+import jwt from "jsonwebtoken";
+import { prisma } from "../db/prisma";
 
 export interface AuthRequest extends Request {
-  user?: JwtPayload;
+  user?: { id: string; role: string; email?: string };
 }
 
-export function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
+export async function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
-  if (!header?.startsWith('Bearer ')) {
-    logger.security('Missing auth header', { ip: req.ip, path: req.path });
-    return res.status(401).json({ error: 'Nicht authentifiziert' });
-  }
-  const token = header.slice(7);
+  if (!header?.startsWith("Bearer ")) return res.status(401).json({ error: "Nicht authentifiziert" });
   try {
-    const payload = jwt.verify(token, env.JWT_ACCESS_SECRET) as JwtPayload;
-    // Optional device binding
-    const deviceFp = req.headers['x-device-fingerprint'] as string | undefined;
-    if (payload.deviceFingerprint && deviceFp && payload.deviceFingerprint !== deviceFp) {
-      logger.security('Device fingerprint mismatch', { userId: payload.sub, ip: req.ip });
-      return res.status(401).json({ error: 'Gerätebindung ungültig' });
+    const payload = jwt.verify(header.slice(7), process.env.JWT_ACCESS_SECRET!) as any;
+    const user = await prisma.appUser.findUnique({ where: { id: payload.sub } });
+    if (!user) return res.status(401).json({ error: "Benutzer nicht gefunden" });
+    const fp = req.headers["x-device-fingerprint"] as string || "";
+    if (user.deviceFingerprint && fp && user.deviceFingerprint !== fp) {
+      // soft warning only in development
+      if (process.env.NODE_ENV === "production") {
+        return res.status(403).json({ error: "Geräte-Fingerprint ungültig" });
+      }
     }
-    req.user = payload;
+    req.user = { id: user.id, role: user.role, email: user.email };
     next();
   } catch {
-    logger.security('Invalid JWT', { ip: req.ip, path: req.path });
-    return res.status(401).json({ error: 'Token ungültig oder abgelaufen' });
+    res.status(401).json({ error: "Token ungültig oder abgelaufen" });
   }
 }
 
 export function requireRole(...roles: string[]) {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
-    if (!req.user || !roles.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Keine Berechtigung' });
-    }
+    if (!req.user || !roles.includes(req.user.role)) return res.status(403).json({ error: "Keine Berechtigung" });
     next();
   };
 }

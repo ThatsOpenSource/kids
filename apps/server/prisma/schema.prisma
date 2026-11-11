@@ -1,7 +1,3 @@
-// KIDS – Prisma schema
-// Sensitive person fields: AES-GCM ciphertext in columns (no "_enc" suffix).
-// Lookup / uniqueness via blind indexes (*Hash = SHA-256 hex of normalized plaintext).
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,226 +7,182 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum AppUserRole {
+enum AppRole {
   admin
   operator
   viewer
 }
 
-enum SchoolType {
-  grundschule
-  regelschule
-  gymnasium
-  sonstige
-}
-
 model AppUser {
-  id                 String      @id @default(uuid()) @db.Uuid
-  email              String      @unique
-  passwordHash       String      @map("password_hash")
-  displayName        String      @map("display_name")
-  role               AppUserRole
-  active             Boolean     @default(true)
-  deviceFingerprints String[]    @default([]) @map("device_fingerprints")
-  totpSecret         String?     @map("totp_secret")
-  totpEnabled        Boolean     @default(false) @map("totp_enabled")
-  totpVerifiedAt     DateTime?   @map("totp_verified_at") @db.Timestamptz(6)
-  lastLoginAt        DateTime?   @map("last_login_at") @db.Timestamptz(6)
-  createdAt          DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
-  version            Int         @default(1)
-
+  id              String    @id @default(uuid())
+  email           String    @unique
+  passwordHash    String
+  role            AppRole   @default(viewer)
+  totpSecretEnc   String?
+  totpEnabled     Boolean   @default(false)
+  totpVerifiedAt  DateTime?
+  deviceFingerprint String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
   refreshTokens   RefreshToken[]
-  importJobs      ImportJob[]
-  personVersions  PersonVersion[]      @relation("ChangedBy")
-  personsCreated  Person[]             @relation("CreatedBy")
-  personsUpdated  Person[]             @relation("UpdatedBy")
-  amsExports      AmsExport[]
-  passwordReveals PasswordRevealLog[]
-
-  @@map("app_users")
-}
-
-model School {
-  id            String     @id
-  /// Schulnummer (same as id by convention, e.g. 50267)
-  /// KZ-OU short code (e.g. gym-gsdg)
-  code          String     @unique @map("code")
-  /// KZ-SNr – school index for STO groups (e.g. 45). Empty until set; not auto from GUID.
-  kzSnr         String?    @map("kz_snr")
-  name          String
-  type          SchoolType
-  location      String?
-  amsLocationId String     @default(uuid()) @map("ams_location_id") @db.Uuid
-  active        Boolean    @default(true)
-  config        Json       @default("{}")
-  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
-  version       Int        @default(1)
-
-  @@map("schools")
-}
-
-/// All sensitive attributes stored encrypted (AES-GCM). Hashes enforce uniqueness / filters.
-model Person {
-  id String @id @default(uuid()) @db.Uuid
-
-  /// Blind index of LKID (unique)
-  lkidHash String @unique @map("lkid_hash")
-  /// Encrypted LKID
-  lkid     String
-
-  /// Blind index of AMS person UUID (unique)
-  amsIdHash String @unique @map("ams_id_hash")
-  /// Encrypted AMS id
-  amsId     String @map("ams_id")
-
-  /// Blind index of school id (for filter; integrity app-level)
-  schoolIdHash String @map("school_id_hash")
-  /// Encrypted school id
-  schoolId     String @map("school_id")
-
-  lastName  String @map("last_name")
-  firstName String @map("first_name")
-
-  /// Encrypted ISO date string YYYY-MM-DD
-  dateOfBirth String? @map("date_of_birth")
-  /// SCHULBEG – first school entry date (encrypted ISO YYYY-MM-DD)
-  schoolEntryDate String? @map("school_entry_date")
-  /// SCHULEND – school end date if present (encrypted ISO)
-  schoolEndDate   String? @map("school_end_date")
-
-  gender String? @db.Char(1)
-
-  email    String?
-  emailMdm String? @map("email_mdm")
-
-  usernameHash String? @unique @map("username_hash")
-  username     String?
-
-  appleId String? @map("apple_id")
-
-  /// Encrypted reversible person password
-  password String?
-
-  /// Encrypted JSON array of role strings (schueler|lehrer|sonstige|klassenlehrer)
-  roles String
-
-  className     String? @map("class_name")
-  /// Blind index for (school + class) uniqueness when class set
-  classNameHash String? @map("class_name_hash")
-
-  grade     String?
-  gradeHash String? @map("grade_hash")
-
-  /// Encrypted JSON array of app flags
-  applications String @default("[]")
-
-  activeAttendance Boolean @default(true) @map("active_attendance")
-  terminated       Boolean @default(false)
-
-  note     String?
-  importId String? @map("import_id")
-  sourceId String? @map("source_id")
-
-  version     Int       @default(1)
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdById String?   @map("created_by") @db.Uuid
-  updatedById String?   @map("updated_by") @db.Uuid
-
-  createdBy AppUser?        @relation("CreatedBy", fields: [createdById], references: [id])
-  updatedBy AppUser?        @relation("UpdatedBy", fields: [updatedById], references: [id])
-  versions  PersonVersion[]
-
-  @@index([schoolIdHash])
-  @@index([schoolIdHash, classNameHash])
-  @@index([usernameHash])
-  @@map("persons")
-}
-
-model PersonVersion {
-  id           String   @id @default(uuid()) @db.Uuid
-  personId     String   @map("person_id") @db.Uuid
-  version      Int
-  snapshot     Json
-  changedById  String?  @map("changed_by") @db.Uuid
-  changeReason String?  @map("change_reason")
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  person    Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
-  changedBy AppUser? @relation("ChangedBy", fields: [changedById], references: [id])
-
-  @@unique([personId, version])
-  @@map("person_versions")
-}
-
-model ImportJob {
-  id         String    @id @default(uuid()) @db.Uuid
-  userId     String    @map("user_id") @db.Uuid
-  filename   String
-  schoolId   String?   @map("school_id")
-  status     String    @default("pending")
-  stats      Json?
-  errors     Json?
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
-
-  user AppUser @relation(fields: [userId], references: [id])
-
-  @@map("import_jobs")
 }
 
 model RefreshToken {
-  id        String    @id @default(uuid()) @db.Uuid
-  userId    String    @map("user_id") @db.Uuid
-  tokenHash String    @unique @map("token_hash")
-  deviceFp  String?   @map("device_fp")
-  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  user      AppUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
 
-  user AppUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+model School {
+  id            String   @id @default(uuid())
+  sid           String   @unique // HHST, 5 digits, e.g. 23045
+  sgid          String   // government Schulnummer, e.g. 50267
+  soid          String   // derived last 2 of SID, e.g. 45
+  name          String
+  schoolType    String   // Grundschule, Regelschule, Gymnasium, ...
+  config        Json     @default("{}")
+  amsLocationId String   @unique @default(uuid())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  persons       PersonSchool[]
+  classes       SchoolClass[]
+}
 
-  @@index([userId])
-  @@map("refresh_tokens")
+model SchoolClass {
+  id        String   @id @default(uuid())
+  schoolId  String
+  lkid      String   // from groupsextension LKGREIZ_GRID
+  name      String   // SHORT0, e.g. "9b"
+  classKey  String   // sid-name, e.g. "23045-9b"
+  active    Boolean  @default(true)
+  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([schoolId, name])
+  @@index([lkid])
 }
 
 model RoleDefinition {
-  id            String   @id
-  name          String
-  canonical     String
-  aliases       String[] @default([])
-  accountType   Int      @map("account_type")
-  defaultFlags  String[] @default([]) @map("default_flags")
-  description   String?
-  version       Int      @default(1)
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  @@map("role_definitions")
+  id       String @id @default(uuid())
+  vceType  Int    @unique // 411, 421, 431
+  dataId   String @unique // e.g. "Lehrer", "Schueler"
+  label    String
+  aliases  String[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  persons  PersonRole[]
 }
 
-model AmsExport {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
-  schoolId  String?  @map("school_id")
+model FlagDefinition {
+  id        String   @id @default(uuid())
+  dataId    String   @unique // mdm, cloud, dvv, print, iot
+  label     String
+  requires  String[] // dataIds of required flags
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  persons   PersonFlag[]
+  groups    GroupFlag[]
+}
+
+model GroupFlag {
+  id       String   @id @default(uuid())
+  flagId   String
+  roleId   String?
+  schoolId String?
+  flag     FlagDefinition @relation(fields: [flagId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  @@unique([flagId, roleId, schoolId])
+}
+
+model Person {
+  id              String   @id @default(uuid())
+  lkid            String   @unique // SID-YYYY-NNNNN
+  amsId           String   @unique @default(uuid())
+  // Encrypted envelope fields (ciphertext + iv + tag + wrappedDek)
+  nameEnc         String
+  firstNameEnc    String
+  emailEnc        String?
+  workEmailEnc    String?
+  passwordEnc     String?
+  // Plain / indexed
+  dateOfBirth     DateTime?
+  username        String   @unique
+  appleId         String?
+  systemEmail     String?
+  schoolStart     DateTime?
+  schoolEnd       DateTime?
+  stufe           String?  // grade from XML STUFE
+  active          Boolean  @default(true)
+  sex             String?  // m/w/d
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  schools         PersonSchool[]
+  roles           PersonRole[]
+  flags           PersonFlag[]
+  classes         PersonClass[]
+  versions        PersonVersion[]
+}
+
+model PersonSchool {
+  personId String
+  schoolId String
+  person   Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  @@id([personId, schoolId])
+}
+
+model PersonRole {
+  personId String
+  roleId   String
+  person   Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+  role     RoleDefinition @relation(fields: [roleId], references: [id])
+  @@id([personId, roleId])
+}
+
+model PersonFlag {
+  personId String
+  flagId   String
+  person   Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+  flag     FlagDefinition @relation(fields: [flagId], references: [id])
+  @@id([personId, flagId])
+}
+
+model PersonClass {
+  id       String @id @default(uuid())
+  personId String
+  schoolId String
+  classKey String // e.g. "23045-5a"
+  person   Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+  @@unique([personId, classKey])
+}
+
+model PersonVersion {
+  id        String   @id @default(uuid())
+  personId  String
+  version   Int
+  snapshot  Json     // encrypted snapshot or redacted
+  changedBy String?
+  createdAt DateTime @default(now())
+  person    Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+}
+
+model ImportJob {
+  id        String   @id @default(uuid())
+  filename  String
+  status    String
   stats     Json?
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  user AppUser @relation(fields: [userId], references: [id])
-
-  @@map("ams_exports")
+  errors    Json?
+  createdAt DateTime @default(now())
+  createdBy String?
 }
 
 model PasswordRevealLog {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
+  id        String   @id @default(uuid())
+  userId    String
   scope     String
-  scopeRef  String?  @map("scope_ref")
-  count     Int
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  user AppUser @relation(fields: [userId], references: [id])
-
-  @@map("password_reveal_logs")
+  ref       String?
+  createdAt DateTime @default(now())
 }

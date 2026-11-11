@@ -1,15 +1,53 @@
-node_modules
-dist
-build
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Environment
 .env
 .env.local
+.env.*.local
+apps/server/.env
+
+# Logs
+logs/
 *.log
-logs/*
-!.gitkeep
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+dist/
+build/
+.turbo/
+.next/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
 .DS_Store
-coverage
-.turbo
-*.tsbuildinfo
-apps/server/uploads
-apps/server/tmp
-*.env*
+Thumbs.db
+
+# Docker volumes / local data
+postgres-data/
+
+# Sensitive / large data - never commit
+*.zip
+**/seed*.ts
+**/seed*.js
+**/seed*.sql
+Export_f_ZSVA/
+**/Rohdaten*
+**/ASM/
+**/Export-ZSVA/
+
+# Prisma
+apps/server/prisma/migrations/
+
+# Coverage
+coverage/
+.nyc_output/

@@ -1,0 +1,38 @@
+export const de = {
+  dashboard: "Dashboard",
+  persons: "Personen",
+  import: "Import",
+  schools: "Schulen",
+  config: "Konfiguration",
+  ams: "AMS Export",
+  passwords: "Passwörter",
+  csv: "CSV-Export",
+  security: "Sicherheit",
+  login: "Anmelden",
+  logout: "Abmelden",
+  male: "männlich",
+  female: "weiblich",
+  noErrors: "Keine Fehler gefunden",
+  commit: "Jetzt importieren",
+  newSchool: "Neue Schule",
+  editSchool: "Schule bearbeiten",
+  newRole: "Rolle anlegen",
+  editRole: "Rolle bearbeiten",
+  newFlag: "Flag anlegen",
+  editFlag: "Flag bearbeiten",
+  save: "Speichern",
+  cancel: "Abbrechen",
+  generate: "Generieren",
+  reveal: "Einmal anzeigen",
+  export: "Exportieren",
+  download: "Download",
+  setup2fa: "2FA einrichten",
+  confirm: "Bestätigen",
+  passwordPolicy: "Passwort-Policy",
+  mdmEmailDomain: "MDM E-Mail Domain",
+  mdmEmailPattern: "MDM E-Mail Muster",
+};
+
+export function t(key: keyof typeof de): string {
+  return de[key] || String(key);
+}

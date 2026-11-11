@@ -1,149 +1,89 @@
-import { Router } from 'express';
-import { z } from 'zod';
-import { requireAuth, requireRole, type AuthRequest } from '../middleware/auth';
-import { prisma } from '../db/prisma';
-import { validate } from '../middleware/validate';
-import { personsQuerySchema } from '../validation/schemas';
-import { PERSON_ROLES } from '@kids/shared';
-import { blindHash, encryptField, encryptJson } from '../utils/crypto';
-import { decryptPersonRow, toApiPerson, attachSto } from '../services/personMapper';
-import { logger } from '../utils/logger';
+import { Router } from "express";
+import { prisma } from "../db/prisma";
+import { decryptField } from "../encryption/envelope";
+import { mergeFlags } from "../services/groupFlags";
 
 const router = Router();
 
-const roleSchema = z.enum([
-  PERSON_ROLES.SCHUELER,
-  PERSON_ROLES.LEHRER,
-  PERSON_ROLES.SONSTIGE,
-  PERSON_ROLES.KLASSENLEHRER,
-]);
+router.get("/", async (req, res) => {
+  const page = Math.max(1, parseInt(String(req.query.page || "1")));
+  const limit = Math.min(200, parseInt(String(req.query.limit || "50")));
+  const skip = (page - 1) * limit;
+  const school = String(req.query.school || "").split(",").filter(Boolean);
+  const role = String(req.query.role || "").split(",").filter(Boolean);
+  const flag = String(req.query.flag || "").split(",").filter(Boolean);
+  const stufe = String(req.query.stufe || "").split(",").filter(Boolean);
+  const q = String(req.query.q || "").trim().toLowerCase();
 
-const patchPersonSchema = z.object({
-  roles: z.array(roleSchema).min(1).optional(),
-  rollen: z.array(roleSchema).min(1).optional(),
-  className: z.string().max(64).nullable().optional(),
-  klasse: z.string().max(64).nullable().optional(),
-  emailMdm: z.string().email().nullable().optional().or(z.literal('')),
-  applications: z.array(z.string().max(32)).optional(),
-  note: z.string().max(500).nullable().optional(),
-});
+  const where: any = {};
+  if (school.length) where.schools = { some: { school: { sid: { in: school } } } };
+  if (role.length) where.roles = { some: { role: { label: { in: role } } } };
+  if (flag.length) where.flags = { some: { flag: { dataId: { in: flag } } } };
+  if (stufe.length) where.stufe = { in: stufe };
 
-router.get('/', requireAuth, validate(personsQuerySchema, 'query'), async (req, res) => {
-  const { schulId, schoolId, q, klasse, rolle, kontentyp } = req.query as Record<
-    string,
-    string | undefined
-  >;
-  const sid = schoolId || schulId;
-
-  const where: Record<string, unknown> = {};
-  if (sid) where.schoolIdHash = blindHash(sid);
-  if (klasse) where.classNameHash = blindHash(klasse);
-
-  const rows = await prisma.person.findMany({
-    where,
-    orderBy: [{ updatedAt: 'desc' }],
-    take: 5000,
-  });
-
-  const schoolIds = [...new Set(rows.map((r) => {
-    try { return decryptPersonRow(r).schoolId; } catch { return null; }
-  }).filter(Boolean))] as string[];
-  const schools = await prisma.school.findMany({ where: { id: { in: schoolIds } } });
-  const kzBySchool = Object.fromEntries(schools.map((s) => [s.id, s.kzSnr]));
-
-  let persons = rows.map((r) => {
-    const api = toApiPerson(decryptPersonRow(r));
-    return attachSto(api, kzBySchool[api.schoolId]);
-  });
-
-  if (rolle) {
-    persons = persons.filter((p) => p.roles.includes(rolle as any));
-  }
-  if (kontentyp) {
-    const kt = Number(kontentyp);
-    persons = persons.filter((p) => p.accountType === kt);
-  }
-  if (q) {
-    const s = q.toLowerCase();
-    persons = persons.filter(
-      (r) =>
-        r.lastName.toLowerCase().includes(s) ||
-        r.firstName.toLowerCase().includes(s) ||
-        r.lkid.toLowerCase().includes(s) ||
-        (r.username || '').toLowerCase().includes(s) ||
-        (r.appleId || '').toLowerCase().includes(s) ||
-        (r.email || '').toLowerCase().includes(s) ||
-        (r.emailMdm || '').toLowerCase().includes(s) ||
-        (r.className || '').toLowerCase().includes(s)
-    );
-  }
-
-  const klassen = [...new Set(persons.map((p) => p.className).filter(Boolean))].sort() as string[];
-  const schulIds = [...new Set(persons.map((p) => p.schoolId))].sort();
-  const rollen = [...new Set(persons.flatMap((p) => p.roles))].sort();
-
-  res.json({
-    persons,
-    total: persons.length,
-    facets: { klassen, schulIds, rollen },
-  });
-});
-
-router.patch(
-  '/:lkid',
-  requireAuth,
-  requireRole('admin', 'operator'),
-  validate(patchPersonSchema),
-  async (req: AuthRequest, res) => {
-    const lkidHash = blindHash(req.params.lkid);
-    const person = await prisma.person.findUnique({ where: { lkidHash } });
-    if (!person) return res.status(404).json({ error: 'Person nicht gefunden' });
-
-    const body = req.body as z.infer<typeof patchPersonSchema>;
-    const roles = body.roles || body.rollen;
-    const className = body.className !== undefined ? body.className : body.klasse;
-
-    const data: Record<string, unknown> = {
-      updatedById: req.user!.sub,
-      version: { increment: 1 },
-    };
-    if (roles) data.roles = encryptJson(roles);
-    if (className !== undefined) {
-      data.className = className ? encryptField(className) : null;
-      data.classNameHash = className ? blindHash(className) : blindHash('');
-    }
-    if (body.applications) data.applications = encryptJson(body.applications);
-    if (body.note !== undefined) data.note = body.note;
-    if (body.emailMdm !== undefined) {
-      data.emailMdm = body.emailMdm ? encryptField(body.emailMdm) : null;
-    }
-
-    const updated = await prisma.person.update({ where: { id: person.id }, data });
-    const api = toApiPerson(decryptPersonRow(updated));
-
-    await prisma.personVersion.create({
-      data: {
-        personId: person.id,
-        version: updated.version,
-        snapshot: api as any,
-        changedById: req.user!.sub,
-        changeReason: 'manual-edit',
+  const [total, persons] = await Promise.all([
+    prisma.person.count({ where }),
+    prisma.person.findMany({
+      where, skip, take: limit,
+      orderBy: [{ updatedAt: "desc" }],
+      include: {
+        schools: { include: { school: true } },
+        roles: { include: { role: true } },
+        flags: { include: { flag: true } },
+        classes: true,
       },
-    });
+    }),
+  ]);
 
-    logger.audit('Person updated', { lkid: req.params.lkid, userId: req.user!.sub });
-    res.json({ person: api });
-  }
-);
+  const mapped = await Promise.all(persons.map(async p => {
+    const primary = p.schools[0]?.school;
+    const cleanClass = p.classes[0]?.classKey?.includes("-")
+      ? p.classes[0].classKey.split("-").slice(1).join("-")
+      : (p.classes[0]?.classKey || "");
+    const flags = await mergeFlags(p);
+    return {
+      id: p.id,
+      sid: primary?.sid || "",
+      sgid: primary?.sgid || "",
+      soid: primary?.soid || "",
+      schoolName: primary?.name || "",
+      schoolType: primary?.schoolType || "",
+      klasse: cleanClass,
+      stufe: p.stufe || "",
+      lkid: p.lkid,
+      name: decryptField(p.nameEnc) || "",
+      firstName: decryptField(p.firstNameEnc) || "",
+      dateOfBirth: p.dateOfBirth ? p.dateOfBirth.toLocaleDateString("de-DE") : "",
+      username: p.username,
+      appleId: p.appleId || "",
+      email: decryptField(p.emailEnc) || "",
+      systemEmail: p.systemEmail || "",
+      flags,
+      flagLabels: flags.map(f => {
+        const map: Record<string, string> = { dvv: "Datenverarbeiterungsvertrag", mdm: "MDM", cloud: "Nextcloud", print: "PaperCut", iot: "Zentrale Dienste" };
+        return map[f] || f;
+      }),
+      classes: p.roles.some(r => r.role.dataId === "Lehrer") ? ["alle"] : p.classes.map(c => c.classKey.includes("-") ? c.classKey.split("-").slice(1).join("-") : c.classKey),
+      klasse: p.roles.some(r => r.role.dataId === "Lehrer") ? "alle" : cleanClass,
+      amsId: p.amsId,
+      active: p.active,
+      terminated: !p.active,
+      roles: p.roles.map(pr => pr.role.label),
+      vceTypes: p.roles.map(pr => pr.role.vceType),
+      roleDataIds: p.roles.map(pr => pr.role.dataId),
+      hasPassword: !!p.passwordEnc,
+      isPupil: p.roles.some(r => r.role.dataId === "Schueler"),
+    };
+  }));
 
-router.get('/:lkid/versions', requireAuth, async (req, res) => {
-  const person = await prisma.person.findUnique({ where: { lkidHash: blindHash(req.params.lkid) } });
-  if (!person) return res.status(404).json({ error: 'Nicht gefunden' });
-  const versions = await prisma.personVersion.findMany({
-    where: { personId: person.id },
-    orderBy: { version: 'desc' },
-  });
-  res.json({ versions });
+  res.json({ total, page, limit, persons: mapped });
+});
+
+router.post("/:id/copy-password", async (req, res) => {
+  const p = await prisma.person.findUnique({ where: { id: req.params.id } });
+  if (!p?.passwordEnc) return res.status(404).json({ error: "Kein Passwort gesetzt" });
+  const plain = decryptField(p.passwordEnc);
+  res.json({ password: plain || "" });
 });
 
 export default router;

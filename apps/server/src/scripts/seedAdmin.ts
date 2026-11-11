@@ -1,36 +1,21 @@
-/**
- * Seed initial admin user.
- * Run: cd apps/server && bun src/scripts/seedAdmin.ts
- */
-import { prisma } from '../db/prisma';
-import { hashPassword } from '../utils/crypto';
+import bcrypt from "bcrypt";
+import { prisma } from "../db/prisma";
 
 async function main() {
-  const email = (process.env.ADMIN_EMAIL || 'admin@kids.local').toLowerCase();
-  const password = process.env.ADMIN_PASSWORD || 'ChangeMeNow!23';
-  const passwordHash = await hashPassword(password);
-
-  const user = await prisma.appUser.upsert({
-    where: { email },
-    create: {
-      email,
-      passwordHash,
-      displayName: 'KIDS Admin',
-      role: 'admin',
-    },
-    update: {
-      passwordHash,
-      active: true,
-      role: 'admin',
-    },
-  });
-  console.log('Admin ready:', { id: user.id, email: user.email, role: user.role });
-  console.log('Login with:', email, '/', password);
+  const email = "admin@kids.local";
+  const existing = await prisma.appUser.findUnique({ where: { email } });
+  if (!existing) {
+    await prisma.appUser.create({
+      data: {
+        email,
+        passwordHash: await bcrypt.hash("ChangeMeNow!23", 12),
+        role: "admin",
+      },
+    });
+    console.log("Admin created: admin@kids.local / ChangeMeNow!23");
+  } else {
+    console.log("Admin already exists");
+  }
 }
 
-main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+main().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); });

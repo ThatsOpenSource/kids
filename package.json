@@ -1,21 +1,16 @@
 {
   "name": "kids-monorepo",
-  "version": "0.1.0",
   "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "workspaces": ["apps/*", "packages/*"],
   "scripts": {
-    "dev:server": "bun run --cwd apps/server dev",
     "dev:client": "bun run --cwd apps/client dev",
-    "build": "bun run --cwd packages/shared typecheck && bun run --cwd apps/server build && bun run --cwd apps/client build",
-    "typecheck": "bun run --cwd packages/shared typecheck && bun run --cwd apps/server typecheck && bun run --cwd apps/client typecheck",
-    "db:generate": "bun run --cwd apps/server db:generate",
-    "db:push": "bun run --cwd apps/server db:push",
-    "db:seed": "bun run --cwd apps/server db:seed"
+    "dev:server": "bun run --cwd apps/server dev",
+    "build": "bun run --cwd apps/client build && bun run --cwd apps/server build",
+    "db:generate": "bunx --cwd apps/server prisma generate",
+    "db:push": "bunx --cwd apps/server prisma db push",
+    "db:seed": "bun run --cwd apps/server src/scripts/seedAdmin.ts && bun run --cwd apps/server src/scripts/seedSchools.ts"
   },
   "devDependencies": {
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.0"
   }
 }

@@ -1,80 +1,57 @@
-/**
- * Seed known schools + role definitions.
- * Run: cd apps/server && bun src/scripts/seedSchools.ts
- */
-import { prisma } from '../db/prisma';
+import { prisma } from "../db/prisma";
 
 async function main() {
-  await prisma.school.upsert({
-    where: { id: '50267' },
-    create: {
-      id: '50267',
-      code: 'gym-gsdg',
-      kzSnr: '45',
-      name: 'Georg-Samuel-Dörffel-Gymnasium - Staatliches Gymnasium Weida',
-      type: 'gymnasium',
-      location: 'Weida',
-      config: {
-        umlautMode: 'ae',
-        assignAllTeachersToClasses: true,
-        appleIdDomain: 'appleid.ds-greiz.de',
-        defaultFlags: ['sp-prt'],
-      },
-    },
-    update: {
-      code: 'gym-gsdg',
-      name: 'Georg-Samuel-Dörffel-Gymnasium - Staatliches Gymnasium Weida',
-      type: 'gymnasium',
-      location: 'Weida',
-    },
-  });
-  console.log('School 50267 seeded');
-
-  const roles = [
-    {
-      id: 'schueler',
-      name: 'Schüler',
-      canonical: 'schueler',
-      aliases: ['schueler', 'schüler', 'student', 'pupil'],
-      accountType: 431,
-      defaultFlags: ['sp-iot'],
-    },
-    {
-      id: 'lehrer',
-      name: 'Lehrer',
-      canonical: 'lehrer',
-      aliases: ['lehrer', 'lehrerin', 'teacher'],
-      accountType: 411,
-      defaultFlags: ['sp-prt', 'sg-mdm'],
-    },
-    {
-      id: 'sonstige',
-      name: 'Sonstige',
-      canonical: 'sonstige',
-      aliases: ['sonstige', 'other'],
-      accountType: 421,
-      defaultFlags: [] as string[],
-    },
-  ];
-
-  for (const r of roles) {
-    await prisma.roleDefinition.upsert({
-      where: { id: r.id },
-      create: r,
-      update: {
-        name: r.name,
-        aliases: r.aliases,
-        accountType: r.kontentyp,
-        defaultFlags: r.defaultFlags,
+  const sid = "23045";
+  const existing = await prisma.school.findUnique({ where: { sid } });
+  if (!existing) {
+    await prisma.school.create({
+      data: {
+        sid,
+        sgid: "50267",
+        soid: "45",
+        name: "Gymnasium Georg-Samuel-Dörffel Weida",
+        schoolType: "Gymnasium",
+        config: {
+          umlautMode: "ae",
+          passwordPolicy: { length: 12, upper: true, lower: true, digits: true, special: false, words: ["Schule", "Weida", "Greiz"], wordCount: 0 },
+          appleIdDomain: "appleid.ds-greiz.de",
+          mdmEmailDomain: "schulen-greiz.de",
+          mdmEmailPattern: "{username}@{soid}.{domain}",
+          assignAllTeachersToClasses: true,
+        },
       },
     });
+    console.log("Seeded school 23045");
   }
-  console.log('Roles seeded');
+
+  const roles = [
+    { vceType: 411, dataId: "Lehrer", label: "Lehrer", aliases: ["LuL", "Teacher"] },
+    { vceType: 431, dataId: "Schueler", label: "Schüler", aliases: ["SuS", "Student"] },
+    { vceType: 421, dataId: "Sonstige", label: "Sonstige", aliases: ["Other"] },
+  ];
+  for (const r of roles) {
+    await prisma.roleDefinition.upsert({
+      where: { vceType: r.vceType },
+      update: { label: r.label, aliases: r.aliases },
+      create: r,
+    });
+  }
+
+  const flags = [
+    { dataId: "dvv", label: "Datenverarbeiterungsvertrag", requires: [] },
+    { dataId: "mdm", label: "MDM", requires: ["dvv"] },
+    { dataId: "cloud", label: "Nextcloud", requires: ["dvv"] },
+    { dataId: "print", label: "PaperCut", requires: ["dvv"] },
+    { dataId: "iot", label: "Zentrale Dienste", requires: ["dvv"] },
+  ];
+  for (const f of flags) {
+    await prisma.flagDefinition.upsert({
+      where: { dataId: f.dataId },
+      update: { label: f.label, requires: f.requires },
+      create: f,
+    });
+  }
+  console.log("Roles + Flags seeded");
 }
 
-main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+main().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); });

@@ -2,6 +2,7 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: kids-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: kids
       POSTGRES_PASSWORD: kids_secret
@@ -9,30 +10,25 @@ services:
     ports:
       - "7432:5432"
     volumes:
-      - kids_pg_data:/var/lib/postgresql/data
+      - kids_pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U kids -d kids"]
       interval: 5s
       timeout: 5s
       retries: 10
 
-  # Optional: only start if you need a dedicated Redis
-  #   docker compose up -d redis
-  # Skip if you already have Redis on localhost:6379
   redis:
     image: redis:7-alpine
     container_name: kids-redis
+    restart: unless-stopped
     profiles: ["redis"]
     ports:
       - "6379:6379"
-    volumes:
-      - kids_redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 5
 
 volumes:
-  kids_pg_data:
-  kids_redis_data:
+  kids_pgdata:
