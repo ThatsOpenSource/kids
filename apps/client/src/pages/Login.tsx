@@ -10,7 +10,10 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
   const [mustChange, setMustChange] = useState(false);
+  const [pendingToken, setPendingToken] = useState("");
+  const [needCode, setNeedCode] = useState(false);
   const [need2fa, setNeed2fa] = useState(false);
+  const [remember, setRemember] = useState(false);
   const [qr, setQr] = useState("");
   const [secret, setSecret] = useState("");
   const [code, setCode] = useState("");
@@ -26,10 +29,16 @@ export default function Login() {
     const envelope = await res.json();
     if (!res.ok || !envelope.ok) { setErr(envelope.error || "Fehler"); return; }
     const data = envelope.data;
+    if (data.user.mustChangePassword) { setMustChange(true); setUserId(data.user.id); return; }
+    if (!data.user.totpEnabled) {
+      const remembered = localStorage.getItem("2fa-skip");
+      if (!remembered || Date.now() >= +remembered) { setPendingToken(data.accessToken); setNeed2fa(true); setUserId(data.user.id); return; }
+    } else {
+      const remembered = localStorage.getItem("2fa-skip");
+      if (!remembered || Date.now() >= +remembered) { setPendingToken(data.accessToken); setNeedCode(true); return; }
+    }
     setToken(data.accessToken);
     if (data.refreshToken) localStorage.setItem("refreshToken", data.refreshToken);
-    if (data.user.mustChangePassword) { setMustChange(true); setUserId(data.user.id); return; }
-    if (data.user.role === "admin" && !data.user.totpEnabled) { setNeed2fa(true); return; }
     nav("/");
   }
 
@@ -53,19 +62,52 @@ export default function Login() {
     );
   }
 
+  if (needCode) {
+    return (
+      <div className={styles.shell}>
+        <div className={styles.card}>
+          <h2 className={styles.title}>2FA</h2>
+          <input className={"search-input " + styles.input} placeholder="Code" value={code} onChange={e => setCode(e.target.value)} autoComplete="off" />
+          <label className={styles.muted}><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} /> Für 1 Tag merken</label>
+          {err && <p className={styles.error}>{err}</p>}
+          <Button variant="primary" onClick={async () => {
+            const r = await fetch("/api/auth/2fa/verify", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${pendingToken}` }, body: JSON.stringify({ code }) });
+            const e = await r.json();
+            if (!r.ok || !e.ok) { setErr(e.error || "Code ungültig"); return; }
+            if (remember) localStorage.setItem("2fa-skip", String(Date.now() + 86400000));
+            setToken(pendingToken);
+            nav("/");
+          }}>Bestätigen</Button>
+        </div>
+      </div>
+    );
+  }
   if (need2fa) {
+    if (!qr && pendingToken) {
+      fetch("/api/auth/2fa/setup", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${pendingToken}` }, body: "{}" })
+        .then(r => r.json()).then(e => { if (e.ok) { setQr(e.data.qr); setSecret(e.data.secret); } });
+    }
     return (
       <div className={styles.shell}>
         <div className={styles.card}>
           <h2 className={styles.title}>2FA einrichten</h2>
-          <p className={styles.muted}>Als Administrator ist 2FA erforderlich.</p>
-          {!qr && <Button variant="primary" onClick={async () => { const d = await api("/api/auth/2fa/setup", { method: "POST", body: "{}" }); setQr(d.qr); setSecret(d.secret); }}>QR-Code anzeigen</Button>}
+          <p className={styles.muted}>2FA ist erforderlich. Bitte einrichten.</p>
+          <label className={styles.muted}><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} /> Für 1 Tag merken</label>
+          {!qr && <p className={styles.muted}>QR-Code wird geladen…</p>}
           {qr && (
             <>
               <img className={styles.qr} src={qr} alt="QR" width={200} height={200} />
               <p className={styles.secret}>{secret}</p>
               <input className={"search-input " + styles.input} placeholder="Code" value={code} onChange={e => setCode(e.target.value)} />
-              <Button variant="primary" onClick={async () => { await api("/api/auth/2fa/confirm", { method: "POST", body: JSON.stringify({ code }) }); nav("/"); }}>Bestätigen</Button>
+              {err && <p className={styles.error}>{err}</p>}
+              <Button variant="primary" onClick={async () => {
+                const r = await fetch("/api/auth/2fa/confirm", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${pendingToken}` }, body: JSON.stringify({ code }) });
+                const e = await r.json();
+                if (!r.ok || !e.ok) { setErr(e.error || "Code ungültig"); return; }
+                if (remember) localStorage.setItem("2fa-skip", String(Date.now() + 86400000));
+                setToken(pendingToken);
+                nav("/");
+              }}>Bestätigen</Button>
             </>
           )}
         </div>

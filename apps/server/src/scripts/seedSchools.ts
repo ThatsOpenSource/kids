@@ -6,7 +6,7 @@ async function main() {
   if (!existing) {
     await prisma.school.create({
       data: {
-        sid, sgid: "50267", soid: "45", name: "Gymnasium Georg-Samuel-Dörffel Weida", schoolType: "Gymnasium",
+        sid, sgid: "50267", soid: "45", name: "Gymnasium Georg-Samuel-Dörffel Weida", typeId: "23",
         config: { mdmEmailDomain: "schulen-greiz.de", mdmEmailPattern: "{username}@{soid}.{domain}", appleIdDomain: "appleid.ds-greiz.de" },
       },
     });
@@ -29,6 +29,7 @@ async function main() {
   for (const t of types) {
     await prisma.schoolTypeConfig.upsert({ where: { prefix: t.prefix }, update: t, create: t });
   }
+  const flags = [
     { dataId: "dvv", label: "Datenverarbeiterungsvertrag", requires: [] },
     { dataId: "mdm", label: "MDM", requires: ["dvv"] },
     { dataId: "cloud", label: "Nextcloud", requires: ["dvv"] },

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../store/auth";
+import { api } from "../lib/api";
 import Button from "../components/Button";
 import PageHeader from "../components/PageHeader";
 import s from "../styles/page.module.css";

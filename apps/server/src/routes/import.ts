@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { XMLParser } from "fast-xml-parser";
 import { prisma } from "../db/prisma";
-import { encryptField, decryptField } from "../encryption/envelope";
+import { encryptField, decryptField, lookupHash } from "../encryption/envelope";
 import { log } from "../services/audit";
 import { ok } from "../lib/respond";
 
@@ -59,8 +59,11 @@ router.post("/preview", async (req, res) => {
   const files = req.body.files || [];
   const preview: any[] = [];
   const changes: any[] = [];
-  const schools = await prisma.school.findMany();
+  const schools = await prisma.school.findMany({ include: { type: true } });
   const schoolBySid = new Map(schools.map(s => [s.sid, s]));
+  const flagDefs = await prisma.flagDefinition.findMany();
+  const flagLabel = new Map(flagDefs.map(f => [f.dataId, f.label]));
+  const groupFlags = await prisma.groupFlagAssignment.findMany({ include: { flag: true } });
   for (const f of files) {
     let xml = "";
     try { xml = Buffer.from(f.xmlBase64, "base64").toString("utf8"); } catch {}
@@ -79,22 +82,28 @@ router.post("/preview", async (req, res) => {
         username: r.USERNAME || r.BENUTZER || "",
         dateOfBirth: r.GEBDAT || r.GEBURTSDATUM || r.GEBURT || "",
         schoolName: school?.name || r.SCHULNAME || "",
-        schoolType: school?.schoolType || r.SCHULTYP || "",
+        schoolType: school?.type?.label || r.SCHULTYP || "",
         roles: isPupil ? "Schüler" : "Lehrer",
         active: r.ENTLASSEN !== "J", terminated: r.ENTLASSEN === "J",
-        flags: r.IOT === "J" ? "iot" : "",
+        flags: (() => {
+          const ids = r.IOT === "J" ? ["iot"] : [];
+          for (const g of groupFlags) {
+            if (g.roleId && !ids.includes(g.flag.dataId)) ids.push(g.flag.dataId);
+          }
+          return ids.map(id => flagLabel.get(id) || id).join(", ");
+        })(),
         selected: true,
       };
       preview.push(row);
       if (r.LKGREIZ_GRID) {
-        const existing = await prisma.person.findUnique({ where: { lkid: r.LKGREIZ_GRID }, include: { classes: true } });
+        const existing = await prisma.person.findUnique({ where: { lkidHash: lookupHash(r.LKGREIZ_GRID) }, include: { classes: true } });
         if (existing) {
           const oldEmail = await decryptField(existing.email) || "";
           const oldClass = existing.classes[0]?.classKey?.split("-").slice(1).join("-") || "";
           if (email && oldEmail && email !== oldEmail) changes.push({ lkid: r.LKGREIZ_GRID, field: "E-Mail", old: oldEmail, new: email });
           if (r.KL && oldClass && r.KL !== oldClass) changes.push({ lkid: r.LKGREIZ_GRID, field: "Klasse", old: oldClass, new: r.KL });
           if (r.STUFE && existing.stufe && existing.stufe !== r.STUFE) changes.push({ lkid: r.LKGREIZ_GRID, field: "Stufe", old: existing.stufe, new: r.STUFE });
-          if (existing.systemEmail) row.systemEmail = existing.systemEmail;
+          if (existing.systemEmail) row.systemEmail = await decryptField(existing.systemEmail) || "";
         }
       }
     }
@@ -112,6 +121,9 @@ router.post("/commit", async (req, res) => {
   const selected = new Set(selectedLkids || []);
   let created = 0, updated = 0;
   const schoolBySgid = new Map((await prisma.school.findMany()).map(s => [s.sgid, s]));
+  const flagDefs = await prisma.flagDefinition.findMany();
+  const flagLabel = new Map(flagDefs.map(f => [f.dataId, f.label]));
+  const groupFlags = await prisma.groupFlagAssignment.findMany({ include: { flag: true } });
   const roleMap = new Map((await prisma.roleDefinition.findMany()).map(r => [r.dataId, r]));
   const existingUsernames = new Set((await prisma.person.findMany({ select: { username: true } })).map(p => p.username));
 
@@ -127,7 +139,7 @@ router.post("/commit", async (req, res) => {
       const school = schoolBySgid.get(r.SNR);
       if (!school) continue;
       const email = firstEmail(r.EMAIL);
-      const existing = await prisma.person.findUnique({ where: { lkid } });
+      const existing = await prisma.person.findUnique({ where: { lkidHash: lookupHash(lkid) } });
       const isPupil = isPupilFile || r.ENTITYTYPE === "s";
       if (!existing) {
         const clean = (s: string) => s.toLowerCase().replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss").replace(/[^a-z]/g, "").slice(0, 3);
@@ -137,11 +149,14 @@ router.post("/commit", async (req, res) => {
         existingUsernames.add(username);
         const person = await prisma.person.create({
           data: {
-            lkid, name: (await encryptField(r.NNAME))!, firstName: (await encryptField(r.VNAME || ""))!,
+            lkid: (await encryptField(lkid))!, lkidHash: lookupHash(lkid),
+            name: (await encryptField(r.NNAME))!, firstName: (await encryptField(r.VNAME || ""))!,
             dateOfBirth: parseDate(r.GEBDAT || r.GEBURTSDATUM || r.GEBURT || r.DOB),
-            email: await encryptField(email), username, stufe: r.STUFE || null,
-            appleId: `${username}@appleid.ds-greiz.de`.toLowerCase(),
-            systemEmail: `${username}@${school.soid}.schulen-greiz.de`.toLowerCase(),
+            email: await encryptField(email),
+            username: (await encryptField(username))!, usernameHash: lookupHash(username),
+            stufe: r.STUFE || null,
+            appleId: await encryptField(`${username}@appleid.ds-greiz.de`.toLowerCase()),
+            systemEmail: await encryptField(`${username}@${school.soid}.schulen-greiz.de`.toLowerCase()),
             schools: { create: { schoolId: school.id } },
             classes: r.KL ? { create: { schoolId: school.id, classKey: `${school.sid}-${r.KL}` } } : undefined,
           },

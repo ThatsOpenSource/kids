@@ -7,9 +7,9 @@ import History from "./pages/History";
 import Import from "./pages/Import";
 import Schools from "./pages/Schools";
 import Config from "./pages/Config";
-import Asm from "./pages/Asm";
+import Export from "./pages/Export";
+import ErrorPage from "./pages/ErrorPage";
 import Profile from "./pages/Profile";
-import CsvExport from "./pages/CsvExport";
 import Ruleset from "./pages/Ruleset";
 import { useAuth } from "./store/auth";
 import { useTokenRefresh } from "./lib/useTokenRefresh";
@@ -30,12 +30,12 @@ export default function App() {
         <Route path="import" element={<Import />} />
         <Route path="schulen" element={<Schools />} />
         <Route path="konfiguration" element={<Config />} />
-        <Route path="asm" element={<Asm />} />
-        <Route path="csv" element={<CsvExport />} />
+        <Route path="export" element={<Export />} />
         <Route path="regeln" element={<Ruleset />} />
         <Route path="benutzer" element={<Users />} />
         <Route path="historie" element={<History />} />
         <Route path="profil" element={<Profile />} />
+        <Route path="*" element={<ErrorPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>

@@ -3,9 +3,9 @@ import { api, asArray } from "../lib/api";
 import { useDebounce } from "../lib/useDebounce";
 import DataTable, { Column } from "../components/DataTable";
 import Button from "../components/Button";
-import FilterDropdown from "../components/FilterDropdown";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faCopy } from "@fortawesome/free-solid-svg-icons";
+import { faPen, faClockRotateLeft, faCopy } from "@fortawesome/free-solid-svg-icons";
+import FilterDropdown from "../components/FilterDropdown";
 import { HistoryDialog } from "./History";
 import { PERSON_COLUMNS } from "../lib/columns";
 import styles from "./Persons.module.css";
@@ -100,7 +100,7 @@ export default function Persons() {
     setPwBusy(false); setPwOpen(false); setPwConfirm(""); setPwTotp(""); setPwCustom(""); setPwForce(false);
   }
 
-  const cols: Column[] = [...COLUMNS, { key: "pw", label: "Passwort", render: (r) => <span className={s.pw}>{r.hasPassword ? "•••••" : "–"}</span> }, { key: "pwcopy", label: "", render: (r) => r.hasPassword ? <CopyPw id={r.id} /> : null }, { key: "actions", label: "", render: (r) => <><Button variant="small" onClick={() => api(`/api/persons/${r.id}`).then(setEdit)}>Bearbeiten</Button><Button variant="small" onClick={() => setHistoryId(r.id)}>Historie</Button></> }];
+  const cols: Column[] = [...COLUMNS, { key: "pw", label: "Passwort", render: (r) => <span className={s.pw}>{r.hasPassword ? "•••••" : "–"}</span> }, { key: "pwcopy", label: "", render: (r) => r.hasPassword ? <CopyPw id={r.id} /> : null }, { key: "actions", label: "", render: (r) => <span onClick={e => e.stopPropagation()}><Button variant="small" onClick={() => setEdit(r)}><FontAwesomeIcon icon={faPen} /></Button><Button variant="small" onClick={() => setHistoryId(r.id)}><FontAwesomeIcon icon={faClockRotateLeft} /></Button></span> }];
 
   return (
     <div className={styles.page}>
@@ -154,13 +154,16 @@ export default function Persons() {
       {historyId && <HistoryDialog entityType="person" entityId={historyId} onClose={() => setHistoryId(null)} />}
       {overview && (
         <div className={s.overlay} onClick={() => setOverview(null)}><div className={s.modal + " " + s.modalWide} onClick={e => e.stopPropagation()}>
-          <h3>{overview.firstName} {overview.name}</h3>
+          <div className={s.row} style={{ justifyContent: "space-between", alignItems: "center" }}>
+            <div><h3 style={{ margin: 0 }}>{overview.firstName} {overview.name}</h3><p className={s.muted}>{overview.email || overview.systemEmail}</p></div>
+            <Button variant="small" onClick={() => { setEdit(overview); setOverview(null); }}><FontAwesomeIcon icon={faPen} /></Button>
+          </div>
           <div className={s.grid}>
-            {[["LKID", overview.lkid], ["SID", overview.sid], ["SGID", overview.sgid], ["SOID", overview.soid], ["Schule", overview.schoolName], ["Typ", overview.schoolType], ["Rolle", asArray(overview.roles).join(", ")], ["Klasse", overview.klasse], ["Stufe", overview.stufe], ["Benutzername", overview.username], ["Apple ID", overview.appleId], ["E-Mail", overview.email], ["System-E-Mail", overview.systemEmail], ["Geburt", overview.dateOfBirth], ["Flags", asArray(overview.flags).join(", ")], ["Aktiv", overview.active ? "Ja" : "Nein"]].map(([k, v]) => (
-              <div key={k}><span className={s.muted}>{k}</span><p>{v || "–"}</p></div>
+            {[["LKID", overview.lkid], ["SID", overview.sid], ["SGID", overview.sgid], ["SOID", overview.soid], ["Schule", overview.schoolName], ["Typ", overview.schoolType], ["Rolle", asArray(overview.roles).join(", ")], ["Klasse", overview.klasse], ["Stufe", overview.stufe], ["Benutzername", overview.username], ["Apple ID", overview.appleId], ["System-E-Mail", overview.systemEmail], ["Geburt", overview.dateOfBirth], ["Flags", asArray(overview.flags).join(", ")], ["Aktiv", overview.active ? "Ja" : "Nein"], ["Erstellt", overview.createdAt]].map(([k, v]) => (
+              <div key={k}><span className={s.muted}>{k}</span><p style={{ margin: "4px 0 0" }}>{v || "–"}</p></div>
             ))}
           </div>
-          <Button onClick={() => setOverview(null)}>Schließen</Button>
+          <div className={s.mt}><Button onClick={() => setOverview(null)}>Schließen</Button></div>
         </div></div>
       )}
       {edit && (

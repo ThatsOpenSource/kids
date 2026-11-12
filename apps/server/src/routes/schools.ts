@@ -36,7 +36,7 @@ router.delete("/type-configs/:prefix", async (req, res) => {
 });
 
 function cleanName(name: string): string {
-  return name.replace(/[^\w\säöüÄÖÜß\-]/g, "").replace(/\s+/g, " ").trim();
+  return name.replace(/["""''`]/g, "").replace(/[^\w\säöüÄÖÜß\-]/g, "").replace(/\s+/g, " ").trim();
 }
 
 function parseCsvLine(line: string): string[] {

@@ -18,6 +18,9 @@
 .chipWarn { border-color: #c00; }
 .hidden { display: none; }
 .mt { margin-top: 16px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin: 16px 0; }
+.grid > div { padding: 8px; border-bottom: 1px solid var(--border); }
+.grid span { font-size: .75rem; display: block; }
 .mb { margin-bottom: 12px; }
 .old { background: #fff5f5; }
 .new { background: #f0fff4; }

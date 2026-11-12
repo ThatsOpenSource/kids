@@ -24,8 +24,7 @@ export default function Layout() {
         <NavLink to="/benutzer" className={({ isActive }) => styles.nav + (isActive ? " " + styles.active : "")}>Benutzer</NavLink>
 
         <div className={styles.section}>Ausgabe</div>
-        <NavLink to="/asm" className={({ isActive }) => styles.nav + (isActive ? " " + styles.active : "")}>ASM Export</NavLink>
-        <NavLink to="/csv" className={({ isActive }) => styles.nav + (isActive ? " " + styles.active : "")}>CSV-Export</NavLink>
+        <NavLink to="/export" className={({ isActive }) => styles.nav + (isActive ? " " + styles.active : "")}>Export</NavLink>
         <NavLink to="/regeln" className={({ isActive }) => styles.nav + (isActive ? " " + styles.active : "")}>Passwort-Regeln</NavLink>
 
         <div className={styles.footer}>

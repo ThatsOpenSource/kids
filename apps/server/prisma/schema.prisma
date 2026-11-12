@@ -103,16 +103,24 @@ model GroupFlag {
 model Person {
   id              String   @id @default(uuid())
   lkid            String   @unique
+  lkidHash        String   @unique
   amsId           String   @unique @default(uuid())
   name         String
+  nameHash     String?
   firstName    String
+  firstNameHash String?
   email        String?
+  emailHash    String?
   workEmail    String?
+  workEmailHash String?
   password     String?
   dateOfBirth     DateTime?
   username        String   @unique
+  usernameHash    String   @unique
   appleId         String?
+  appleIdHash     String?
   systemEmail     String?
+  systemEmailHash String?
   schoolStart     DateTime?
   schoolEnd       DateTime?
   stufe           String?

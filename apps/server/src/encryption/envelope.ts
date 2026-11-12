@@ -1,4 +1,8 @@
 import crypto from "crypto";
+
+export function lookupHash(plain: string): string {
+  return crypto.createHmac("sha256", process.env.ENCRYPTION_MASTER_KEY || "").update(plain).digest("hex");
+}
 import { prisma } from "../db/prisma";
 
 const MASTER = process.env.MASTER_KEY || "dev-master-key-32-bytes-long!!";

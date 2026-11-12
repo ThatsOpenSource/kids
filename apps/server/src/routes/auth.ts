@@ -77,6 +77,14 @@ router.post("/2fa/setup", requireAuth, async (req, res) => {
   ok(res, { qr, secret });
 });
 
+router.post("/2fa/verify", requireAuth, async (req, res) => {
+  const user = await prisma.appUser.findUnique({ where: { id: (req as any).userId } });
+  if (!user?.totpSecret) return fail(res, 400, "2FA nicht eingerichtet");
+  const secret = await decryptField(user.totpSecret);
+  if (!authenticator.check(req.body.code, secret || "")) return fail(res, 401, "Code ungültig");
+  ok(res, { ok: true });
+});
+
 router.post("/2fa/confirm", requireAuth, async (req, res) => {
   const { code } = req.body;
   const user = await prisma.appUser.findUnique({ where: { id: (req as any).userId } });

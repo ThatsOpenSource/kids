@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import JSZip from "jszip";
 import { api } from "../lib/api";
 import DataTable from "../components/DataTable";
@@ -11,6 +12,7 @@ interface FileEntry { name: string; type: string; xml: string; }
 export default function Import() {
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [result, setResult] = useState<any>(null);
+  const nav = useNavigate();
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [changePage, setChangePage] = useState(0);
@@ -47,7 +49,7 @@ export default function Import() {
       selectedLkids: [...selected],
     };
     const data = await api("/api/import/commit", { method: "POST", body: JSON.stringify(payload) });
-    setResult({ ...result, committed: data });
+    if (data.created || data.updated) nav("/personen");
     setBusy(false);
   }
 
