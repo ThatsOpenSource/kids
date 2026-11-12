@@ -1,31 +1,67 @@
-# KIDS – Kommunales Informations- und Daten-System
+# KIDS — Kommunales Informations- und Datensystem für Schuldaten
 
-Vollständiges Monorepo (Prisma + Zod-Validierung) für Schülerdaten-Import, AMS-Export, Envelope-Verschlüsselung, 2FA und Konfiguration.
+Verwaltung von Schüler- und Lehrerdaten für den Landkreis Greiz. TypeScript-Monorepo mit React/Vite-Client und Express/Prisma-Server.
 
-## Ports
-- UI: **7430**
-- API: **7420**
-- Postgres: **7432**
+## Voraussetzungen
 
-## Setup
+- Bun
+- Docker (Postgres)
+- Windows 11 oder vergleichbar
+
+## Start
+
 ```bat
-install.bat
-start.bat
+docker compose up -d
+cd apps\server
+bun install
+bunx prisma db push
+bun run seed
+bun run dev
 ```
-Login: `admin@kids.local` / `ChangeMeNow!23`
 
-## Neu in diesem Stand
-- `authService.ts` mit `registerUser`, `loginUser`, TOTP-Helfern (behebt den Export-Fehler)
-- Auth-Middleware schützt alle `/api/*`-Routen außer `/api/auth`
-- Geräte-Fingerprint wird beim ersten Login gespeichert und danach geprüft
-- Schulen: Create/Edit-Modals mit Passwort-Policy (Slider + Checkboxen) und `mdmEmailDomain` / `mdmEmailPattern`
-- Rollen & Flags: Create/Edit-Modals
-- Schul-CSV-Import (`POST /api/schools/import-csv`) + Beispiel `samples/schools-catalogue.csv`
-- Personen-Seite: Server-Pagination (`page`/`limit`) + Client-Pagination
-- Erweiterte i18n-Kataloge in `src/lib/i18n.ts`
+Client in zweitem Terminal:
 
-## Schema & Validierung
-Prisma ist die Source of Truth. Alle Schreibzugriffe laufen über Zod-Schemas in `apps/server/src/validation/schemas.ts`.
+```bat
+cd apps\client
+bun install
+bun run dev
+```
 
-## Beispiel-CSV für Schulen
-`samples/schools-catalogue.csv` – Spalten: `sid,sgid,name,schoolType`
+- Client: http://localhost:7430
+- Server: http://localhost:7420
+- Postgres: localhost:7432
+
+## Anmeldung
+
+Standard: `admin@kids.local` / `ChangeMe123!`
+
+Beim ersten Login muss das Passwort geändert und 2FA eingerichtet werden. Danach ist bei jedem Login ein 2FA-Code erforderlich, außer „Für 1 Tag merken“ ist aktiv.
+
+## Funktionen
+
+- **Personen** — Tabelle mit Filtern, Sortierung, Mehrfachauswahl, Passwort-Generierung, Detail-/Edit-Dialog
+- **Import** — XML (LuL/SuS) mit Vorschau, Vergleich und Schul-Lookup
+- **Schulen** — CRUD, Typ-Konfiguration, CSV-Import
+- **Export** — ASM und CSV mit Passwort-Bestätigung
+- **Regeln** — Passwort-Regeln pro Rolle/Schule
+- **Konfiguration** — Rollen, Flags, Gruppen-Flags
+- **Benutzer** — Verwaltung, 2FA, Passwort
+- **Historie** — Änderungsprotokoll
+
+## Verschlüsselung
+
+Sensible Felder (Name, Vorname, E-Mail, Benutzername, LKID, Apple ID, System-E-Mail, Passwort) werden mit Envelope-Verschlüsselung gespeichert. Lookup-Hashes ermöglichen Suche ohne Entschlüsselung. Schlüsselrotation alle 120 Tage.
+
+## Umgebung
+
+`.env` im Root und `apps/server`:
+
+```
+DATABASE_URL=postgresql://kids:kids@localhost:7432/kids
+ENCRYPTION_MASTER_KEY=...
+PASSWORD_PEPPER=...
+ADMIN_EMAIL=admin@kids.local
+ADMIN_PASSWORD=ChangeMe123!
+JWT_SECRET=...
+JWT_REFRESH_SECRET=...
+```
